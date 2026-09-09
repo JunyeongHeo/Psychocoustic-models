@@ -27,6 +27,14 @@
 % Plotting is guarded so the script also runs headless: figures are created
 % invisible and saved to PNG via print. If plotting is unavailable the script
 % still completes and prints its numeric results.
+%
+% References
+% ----------
+%   * E. Zwicker and H. Fastl, "Psychoacoustics: Facts and Models," Springer.
+%   * T. Painter and A. Spanias, "Perceptual Coding of Digital Audio,"
+%     Proceedings of the IEEE, vol. 88, no. 4, 2000.
+%   * ISO/IEC 11172-3 (MPEG-1 Audio).
+%   * E. Terhardt, "Calculating virtual pitch," Hearing Research, 1979.
 % -----------------------------------------------------------------------------
 
 % Make the helper functions on this directory visible even if the script is

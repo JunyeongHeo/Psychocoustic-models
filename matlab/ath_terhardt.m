@@ -19,6 +19,14 @@ function Tq = ath_terhardt(f)
 %       f  = logspace(log10(20), log10(20000), 500);
 %       Tq = ath_terhardt(f);
 %       semilogx(f, Tq); grid on;
+%
+%   References
+%   ----------
+%     * E. Terhardt, "Calculating virtual pitch," Hearing Research, vol. 1,
+%       no. 2, pp. 155-182, 1979 (see eq:ath in main.tex).
+%     * T. Painter and A. Spanias, "Perceptual Coding of Digital Audio,"
+%       Proceedings of the IEEE, vol. 88, no. 4, 2000.
+%     * ISO/IEC 11172-3 (MPEG-1 Audio).
 
     % Work in kHz for numerical convenience; use element-wise operators so
     % that f can be a scalar or a vector.

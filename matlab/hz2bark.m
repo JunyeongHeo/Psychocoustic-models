@@ -12,6 +12,12 @@ function z = hz2bark(f)
 %
 %   Example:
 %       z = hz2bark([100 1000 4000]);
+%
+%   References
+%   ----------
+%     * E. Zwicker and H. Fastl, "Psychoacoustics: Facts and Models," Springer
+%       (Zwicker Bark-scale approximation; see eq:bark in main.tex).
+%     * ISO/IEC 11172-3 (MPEG-1 Audio).
 
     % Element-wise operators keep this valid for scalar or vector input.
     z = 13 * atan(0.00076 * f) ...
