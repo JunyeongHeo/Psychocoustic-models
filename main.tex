@@ -88,6 +88,28 @@
   columns=fullflexible,
   keepspaces=true,
 }
+% Python 리스팅 전용 스타일 (matlabstyle을 덮어쓰지 않는 별도 스타일)
+\lstdefinestyle{pythonstyle}{%
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekeyword}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestring},
+  numberstyle=\ttfamily\tiny\color{gray},
+  numbers=left,
+  numbersep=8pt,
+  stepnumber=1,
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=4,
+  frame=single,
+  rulecolor=\color{codeframe},
+  backgroundcolor=\color{codebg},
+  captionpos=b,
+  columns=fullflexible,
+  keepspaces=true,
+}
 \lstset{style=matlabstyle}
 
 %--- 하이퍼링크 및 상호참조 ---------------------------------------------------
@@ -1119,6 +1141,71 @@ $96$은 만관 기준 레벨)이다. 비 $\psi(P_{\hat{x}-x})/\psi(T_g)$가 $1$�
 이러한 전략은 Zhen 외(2020)\cite{zhen2020}가 제안한 \emph{손실 함수의 심리음향
 보정}(psychoacoustic calibration of loss functions)의 요지로, 동일 비트율에서
 지각 품질을 높이거나 동일 품질에서 비트율을 낮추는 데 기여한다.
+
+\subsection{PAM-2를 학습 손실로 활용하기 (Using PAM-2 as a training loss)}
+\label{sec:pam2loss}
+앞의 두 손실 항(\Cref{eq:smrloss}, \Cref{eq:nmrloss})은 전역 마스킹 문턱값
+$T_g$가 어느 심리음향 모델에서 나왔는지에 무관하게 성립한다. 따라서 PAM-1 대신
+\emph{심리음향 모델 2}(PAM-2)로 문턱값을 계산하면, 동일한 손실 틀에 PAM-2의
+더 정교한 톤성/불예측성 기반 마스킹을 그대로 주입할 수 있다.
+
+절차는 다음과 같다. 첫째, 학습 이전에 \emph{오프라인}으로 각 프레임의 PAM-2
+전역 마스킹 문턱값을 분할별로 계산한다. 이 계산에는 FEAT-002에서 추가한
+\texttt{matlab/pam2\_threshold.m}(또는 동등한 NumPy 포팅)을 사용한다. PAM-2의
+마스커·톤성 선정은 국소 최대 탐색, 불예측성 $c(w)$ 추정, 확산, 절대 청취 문턱값
+하한, 사전 반향(pre-echo) 제어 등 \emph{이산적이고 미분 불가능한} 단계로 이루어지므로
+반드시 학습 루프 \emph{바깥}에서 한 번만 수행한다. 둘째, 이렇게 얻은 문턱값
+텐서 $T_g$(dB)를 상수로 취급(\texttt{detach})하여 손실 함수의 \texttt{gms}
+인자로 넘긴다. 셋째, STFT 로그-PSD 위에서 계산되는 \Cref{eq:smrloss},
+\Cref{eq:nmrloss}는 복호 신호 $\hat{x}$에 대해 \emph{미분 가능}하므로, 그 경사가
+$\hat{x}$까지 정상적으로 역전파된다. 즉 \emph{문턱값 사전 계산(PAM-2)은 미분
+불가능}하고 \emph{프레임 손실은 미분 가능}하다는 경계가 그대로 유지된다.
+
+\Cref{lst:torchpam2}는 이 구성을 \emph{PyTorch}로 구현한 참조 코드
+(\texttt{python/torch\_pam2\_loss.py})의 핵심부이다. 이 코드는 pam-nac의
+TensorFlow 원본 \texttt{smr\_loss}·\texttt{nmr\_max\_mean\_loss}를 관용적인
+PyTorch로 옮긴 것으로, \texttt{torch} 외의 외부 패키지에 의존하지 않는다.
+\texttt{gms}(사전 계산된 PAM-2 문턱값)에는 각 손실 함수 안에서 \texttt{.detach()}를
+적용하여 미분 불가능 경계를 명시한다.
+
+\begin{lstlisting}[style=pythonstyle,caption={torch\_pam2\_loss.py --- PyTorch로 구현한 PAM-2 기반 SMR/NMR 손실 (eq:smrloss, eq:nmrloss)},label={lst:torchpam2}]
+import torch
+
+REF_LEVEL_DB = 96.0   # full-scale reference (dB), mirrors pam-nac
+EPS = 1e-7
+
+def log_psd_to_psd(log_psd):
+    # dB PSD -> linear PSD, mirrors pam-nac log_psd_to_psd
+    return torch.pow(10.0, (log_psd - REF_LEVEL_DB) / 10.0)
+
+def stft_psd(sig, n_fft, hop):
+    # Differentiable per-frame log-PSD: P = 20*log10(|STFT| / n_fft)
+    window = torch.hann_window(n_fft, device=sig.device, dtype=sig.dtype)
+    spec = torch.stft(sig, n_fft=n_fft, hop_length=hop, win_length=n_fft,
+                      window=window, center=True, return_complex=True)
+    mag = spec.abs().transpose(-1, -2)          # [batch, frames, freq]
+    return 20.0 * torch.log10(mag / n_fft + EPS)
+
+def smr_priority_loss(orig_sig, decoded_sig, gms, n_fft, hop):
+    # SMR-priority-weighted spectral MSE (mirrors pam-nac smr_loss)
+    gms = gms.detach()                          # precomputed PAM-2 threshold
+    ori_psd = stft_psd(orig_sig, n_fft, hop)
+    dec_psd = stft_psd(decoded_sig, n_fft, hop)
+    priority = torch.log10((10.0 ** (0.1 * ori_psd))
+                           / (10.0 ** (0.1 * gms)) + 1.0)
+    return torch.mean((ori_psd - dec_psd) ** 2 * priority)
+
+def nmr_max_loss(orig_sig, decoded_sig, gms, n_fft, hop):
+    # Max lower-bound of NMR (mirrors pam-nac nmr_max_mean_loss)
+    gms = gms.detach()                          # precomputed PAM-2 threshold
+    diff_psd = stft_psd(decoded_sig - orig_sig, n_fft, hop)
+    ratio = torch.relu(log_psd_to_psd(diff_psd) / log_psd_to_psd(gms) - 1.0)
+    return torch.mean(torch.amax(ratio, dim=-1))  # max over freq, mean o/w
+\end{lstlisting}
+
+전체 코드는 저장소의 \texttt{python/torch\_pam2\_loss.py}에 있으며, 무작위
+텐서로 두 손실을 호출해 값이 유한하고 음이 아님을 확인하는
+\texttt{if \_\_name\_\_ == "\_\_main\_\_"} 스모크 테스트를 포함한다.
 
 %==============================================================================
 \section{MATLAB 예제 코드}\label{sec:matlab}

@@ -149,6 +149,43 @@ tlmgr install listings xcolor
 안에서 실행되지 않았습니다**. 위 스크립트는 기본 MATLAB/Octave에서 실행하도록
 작성된 정상 소스이며, 실행은 위 준비를 갖춘 **외부 환경**에서 수행하십시오.
 
+## PyTorch 학습 손실 (Python)
+
+PAM-2 전역 마스킹 문턱값을 신경망 오디오 부호화기의 **학습 손실**로 활용하는
+참조 구현을 `python/` 디렉터리에 제공합니다. 이 코드는 `cocosci/pam-nac`의
+TensorFlow 원본 `smr_loss`·`nmr_max_mean_loss`를 관용적인 **PyTorch**로 옮긴
+것으로, `torch` 외의 외부 패키지에 의존하지 않습니다.
+
+| 파일 | 내용 | 대응 수식 |
+| --- | --- | --- |
+| [`python/torch_pam2_loss.py`](python/torch_pam2_loss.py) | PyTorch SMR 우선순위 가중 MSE 손실 + NMR 상한 최소화 손실 (미분 가능 STFT 경로 + detach된 PAM-2 문턱값) | eq:smrloss, eq:nmrloss |
+
+**미분 가능/불가능 경계**: PAM-2 전역 마스킹 문턱값의 계산(마스커·톤성 선정,
+불예측성, 확산, ATH 하한, 사전 반향)은 **미분 불가능**하며 `matlab/pam2_threshold.m`
+(또는 동등한 NumPy 포팅)으로 **학습 이전에 오프라인**으로 한 번 계산합니다. 그
+결과인 프레임별 문턱값 `gms`(dB)는 손실 함수 안에서 `.detach()`로 상수 처리되며,
+STFT 로그-PSD 위에서 계산되는 손실은 복호 신호에 대해 **미분 가능**합니다.
+
+### 실행 방법 (Python)
+
+```sh
+python3 python/torch_pam2_loss.py
+```
+
+`if __name__ == "__main__"` 스모크 테스트가 무작위 텐서로 두 손실을 호출하여 스칼라
+손실 값을 출력하고, 값이 유한하며 음이 아님을 확인합니다. 실행에는 **PyTorch**가
+필요합니다(`pip install torch`).
+
+### 이 샌드박스에 대한 주의사항 (MATLAB/Octave 및 PyTorch)
+
+이 문서를 작성한 샌드박스에는 **MATLAB/Octave가 설치되어 있지 않으며, PyTorch도
+설치되어 있지 않고 네트워크가 차단(INTEGRATIONS_ONLY)되어 설치도 불가능**합니다.
+따라서 `matlab/*.m` 스크립트와 `python/torch_pam2_loss.py`의 `__main__` 스모크
+테스트는 **샌드박스 안에서 실행되지 않았습니다**. 다만 Python 파일은 `torch`를
+import하지 않는 정적 검사인 `python3 -m py_compile python/torch_pam2_loss.py`로
+문법 유효성을 확인했습니다. 실제 실행은 위 준비(Octave / PyTorch)를 갖춘 **외부
+환경**에서 수행하십시오.
+
 ## 참고 문헌
 
 - E. Zwicker and H. Fastl, *Psychoacoustics: Facts and Models*, Springer.
@@ -156,3 +193,6 @@ tlmgr install listings xcolor
 - ISO/IEC 11172-3 (MPEG-1 Audio).
 - E. Terhardt, "Calculating virtual pitch," *Hearing Research*, 1979.
 - M. Bosi and R. E. Goldberg, *Introduction to Digital Audio Coding and Standards*, Kluwer.
+- K. Zhen, M. S. Lee, J. Sung, S. Beack, M. Kim, "Psychoacoustic Calibration of Loss Functions for Efficient End-to-End Neural Audio Coding," *IEEE Signal Processing Letters*, 2020. <https://saige.sice.indiana.edu/wp-content/uploads/spl2020_kzhen.pdf>
+- F. A. P. Petitcolas, MPEG for MATLAB (reference MPEG audio implementation). <https://www.petitcolas.net/fabien/software/mpeg/>
+- cocosci, *pam-nac* (Python PAM-1 masker + neural-codec losses). <https://github.com/cocosci/pam-nac>
