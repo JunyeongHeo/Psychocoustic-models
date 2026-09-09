@@ -517,6 +517,228 @@ Layer I/II에, 계산량이 큰 모델 2는 주로 Layer III(MP3)에 권장되�
   \end{algorithmic}
 \end{algorithm}
 
+\subsubsection{창 적용과 FFT}
+모델 2는 각 프레임에 분석 창 $w[n]$(예: Hann 창)을 적용한 뒤 FFT를 취하여 각 주파수
+라인 $w$에서 크기 $r(w)$와 위상 $\phi(w)$를 얻는다. 프레임 $t$의 스펙트럼을 $X_t(w)$
+라 하면
+\begin{equation}\label{eq:pam2fft}
+  X_t(w) = \sum_{n=0}^{N-1} w[n]\,x_t[n]\,e^{-\jmath 2\pi w n / N},
+  \qquad
+  r(w) = \lvert X_t(w)\rvert,
+  \qquad
+  \phi(w) = \arg X_t(w),
+\end{equation}
+이다. 여기서 $x_t[n]$은 프레임 $t$의 PCM 표본, $N$은 변환 길이, $r(w)$와 $\phi(w)$는
+각각 라인 $w$의 크기와 위상이다. 이후 모든 처리는 이 $r(w), \phi(w)$에서 출발한다.
+
+\subsubsection{크기·위상 예측}
+모델 2의 핵심은 각 라인의 크기와 위상을 \emph{직전 두 프레임}으로부터 선형 외삽하여
+예측하고, 실제 값이 예측에서 얼마나 벗어나는지로 톤성 여부를 연속적으로 판정하는
+것이다. 프레임 $t-1$, $t-2$의 크기·위상을 각각 $r_{t-1}(w), \phi_{t-1}(w)$와
+$r_{t-2}(w), \phi_{t-2}(w)$라 하면 예측값은
+\begin{equation}\label{eq:pam2pred}
+  \hat r(w) = 2\,r_{t-1}(w) - r_{t-2}(w),
+  \qquad
+  \hat\phi(w) = 2\,\phi_{t-1}(w) - \phi_{t-2}(w),
+\end{equation}
+로 주어진다. 즉 최근 두 프레임에서의 변화율이 유지된다고 가정한 1차 외삽이다.
+순음처럼 안정적인 성분은 크기·위상이 규칙적으로 진행하므로 예측이 잘 맞고,
+잡음처럼 불규칙한 성분은 예측이 크게 빗나간다.
+
+\subsubsection{불예측성 측도}
+라인 $w$의 \emph{불예측성 측도}(unpredictability measure) $c(w)$는 복소 평면에서
+실제 점 $(r\cos\phi,\, r\sin\phi)$와 예측 점 $(\hat r\cos\hat\phi,\, \hat r\sin\hat\phi)$
+사이의 유클리드 거리를 크기의 합으로 정규화하여 정의한다.
+\begin{equation}\label{eq:pam2unpred}
+  c(w) = \frac{\sqrt{\bigl(r\cos\phi - \hat r\cos\hat\phi\bigr)^{2}
+                    + \bigl(r\sin\phi - \hat r\sin\hat\phi\bigr)^{2}}}
+              {r + \lvert\hat r\rvert},
+\end{equation}
+여기서 $r=r(w)$, $\phi=\phi(w)$는 실제 크기·위상, $\hat r=\hat r(w)$,
+$\hat\phi=\hat\phi(w)$는 \Cref{eq:pam2pred}의 예측값이다. $c(w)$는 $[0,1]$로
+제한하며, $0$에 가까울수록 예측이 잘 맞는 톤성, $1$에 가까울수록 예측이 빗나가는
+잡음성을 뜻한다. 이 연속 측도가 모델 1의 이산적 톤성 판별(\Cref{eq:tonal})을
+대체한다.
+
+\subsubsection{분할 집약과 확산}
+다음으로 FFT 라인들을 \emph{문턱값 계산 분할}(threshold-calculation partition) $b$로
+묶는다. 분할 $b$의 에너지 $e(b)$와 에너지 가중 불예측성 $c(b)$를
+\begin{equation}\label{eq:pam2part}
+  e(b) = \sum_{w \in b} r^{2}(w),
+  \qquad
+  c(b) = \sum_{w \in b} r^{2}(w)\,c(w),
+\end{equation}
+로 집약한다($w \in b$는 분할 $b$에 속하는 라인). 이어 두 양을 Bark 축에서 확산 함수
+(\Cref{eq:spread})의 선형 가중치 $\mathrm{sf}(b,b') = 10^{\,\mathrm{SF}(z_{b}-z_{b'})/10}$와
+합성곱하여 인접 분할로 퍼뜨린다.
+\begin{equation}\label{eq:pam2spread}
+  \mathit{ecb}(b) = \sum_{b'} \mathrm{sf}(b,b')\,e(b'),
+  \qquad
+  \mathit{ct}(b)  = \sum_{b'} \mathrm{sf}(b,b')\,c(b'),
+\end{equation}
+그 뒤 정규화된 불예측성과 재정규화 에너지를
+\begin{equation}\label{eq:pam2cb}
+  \mathit{cb}(b) = \frac{\mathit{ct}(b)}{\mathit{ecb}(b)},
+  \qquad
+  \mathit{en}(b) = \frac{\mathit{ecb}(b)}{\sum_{b'} \mathrm{sf}(b,b')},
+\end{equation}
+로 정의한다. 여기서 $\mathit{ecb}(b)$는 확산된 에너지, $\mathit{ct}(b)$는 확산된
+에너지$\times$불예측성, $\mathit{cb}(b)$는 확산 후의 정규화된 불예측성,
+$\mathit{en}(b)$는 확산 정규화 항으로 나눈 재정규화 에너지이다.
+
+\subsubsection{톤성 지수와 요구 SNR}
+확산·정규화된 불예측성 $\mathit{cb}(b)$로부터 \emph{톤성 지수}(tonality index)
+$t(b)$를 다음과 같이 구한다.
+\begin{equation}\label{eq:tonality}
+  t(b) = \operatorname{clip}_{[0,1]}\!\bigl(-0.43\,\ln \mathit{cb}(b) - 0.299\bigr),
+\end{equation}
+여기서 $\operatorname{clip}_{[0,1]}(\cdot)$는 값을 구간 $[0,1]$로 제한하는 연산이고,
+계수 $-0.43$과 $-0.299$는 ISO 모델 2에서 널리 인용되는 값이다. $\mathit{cb}(b)$가
+작을수록($\ln$이 큰 음수) $t(b)$는 $1$에 가까워져 톤성이 강함을, 클수록 $0$에
+가까워져 잡음성이 강함을 나타낸다. 톤성 지수는 분할 $b$가 필요로 하는 \emph{신호 대
+잡음 비}(요구 SNR)를 톤/잡음 사이에서 보간한다.
+\begin{equation}\label{eq:snrreq}
+  \SNR(b) = t(b)\cdot \mathrm{TMN} + \bigl(1 - t(b)\bigr)\cdot \mathrm{NMT},
+  \qquad
+  \mathrm{TMN} \approx 18\dB,\ \ \mathrm{NMT} \approx 6\dB,
+\end{equation}
+여기서 $\mathrm{TMN}$(tone-masking-noise)은 순음이 잡음을 가릴 때 요구되는 SNR,
+$\mathrm{NMT}$(noise-masking-tone)는 잡음이 순음을 가릴 때 요구되는 SNR이며, 관례적
+값 $\mathrm{TMN}\approx 18\dB$, $\mathrm{NMT}\approx 6\dB$를 쓴다. 톤성일수록
+($t(b)\to 1$) 더 큰 SNR을 요구한다.
+
+\subsubsection{대역 문턱값·ATH 하한·사전 반향 제어}
+요구 SNR을 전력비로 바꾸고 재정규화 에너지에 곱하여 분할별 문턱값을 얻는다.
+\begin{equation}\label{eq:nb}
+  \mathrm{bc}(b) = 10^{-\SNR(b)/10},
+  \qquad
+  \mathit{nb}(b) = \mathit{en}(b)\cdot \mathrm{bc}(b),
+\end{equation}
+여기서 $\mathrm{bc}(b)$는 요구 SNR에 대응하는 전력비(power ratio), $\mathit{nb}(b)$는
+그로부터 얻은 분할 $b$의 마스킹 문턱값(선형 전력)이다. 이어 절대 청취 문턱값
+(\Cref{eq:ath})을 선형 전력으로 환산한 $\ATH(b)$로 하한을 적용한다.
+\begin{equation}\label{eq:pam2floor}
+  \mathit{thr}(b) = \max\bigl(\mathit{nb}(b),\ \ATH(b)\bigr).
+\end{equation}
+끝으로 \emph{사전 반향}(pre-echo)을 억제하기 위해 현재 프레임과 직전(지연) 프레임의
+문턱값 중 작은 값을 취하여
+\begin{equation}\label{eq:pam2preecho}
+  \mathit{thr}(b) \leftarrow \min\bigl(\mathit{thr}(b),\ \mathit{thr}_{t-1}(b)\bigr),
+\end{equation}
+로 갱신한다($\mathit{thr}_{t-1}(b)$는 직전 프레임의 분할 문턱값). 이렇게 얻은
+$\mathit{thr}(b)$로부터 각 부호화 대역의 신호 대 마스크 비를 $\SMR(b) =
+10\log_{10}\bigl(e(b)/\mathit{thr}(b)\bigr)$로 산출하여 비트 할당으로 전달한다. 위
+전개는 ISO/IEC 11172-3 부속서 D의 심리음향 모델 2\cite{iso11172}와 Bosi \&
+Goldberg\cite{bosi}, Painter \& Spanias\cite{painter}의 서술을 따른 것이며, 상수
+$\mathrm{TMN}\approx 18\dB$, $\mathrm{NMT}\approx 6\dB$와 톤성 계수 $-0.43$,
+$-0.299$는 이들 문헌에서 널리 인용되는 모델 2 값으로, 본 문서의 산문·수식과 뒤의
+MATLAB 코드에서 동일하게 유지한다.
+
+\subsubsection{MATLAB 구현}
+위 절차를 기본 MATLAB / GNU Octave에서 그대로 실행되는 함수로 구현하여
+\texttt{matlab/} 디렉터리에 싣는다. 특수 툴박스는 필요하지 않으며, 기존 헬퍼
+\texttt{hz2bark.m}(\Cref{eq:bark}), \texttt{spreading\_function.m}(\Cref{eq:spread}),
+\texttt{ath\_terhardt.m}(\Cref{eq:ath})를 재사용한다. \Cref{lst:pam2unpred}는 불예측성
+측도(\Cref{eq:pam2unpred}), \Cref{lst:pam2thr}은 분할별 문턱값과 \SMR{}
+계산(\Cref{eq:pam2part,eq:pam2spread,eq:pam2cb,eq:tonality,eq:snrreq,eq:nb,eq:pam2floor,eq:pam2preecho}),
+\Cref{lst:pam2demo}는 연속 프레임을 합성하여 2-프레임 이력으로 위 함수들을 구동하는
+스크립트의 핵심부이다. 상수 $\mathrm{TMN}=18$, $\mathrm{NMT}=6$과 톤성 계수 $-0.43$,
+$-0.299$가 코드에서도 동일함에 유의한다.
+
+\begin{lstlisting}[style=matlabstyle,caption={pam2\_unpredictability.m --- unpredictability measure c(w) (eq:pam2unpred)},label={lst:pam2unpred}]
+function c = pam2_unpredictability(r, phi, r1, phi1, r2, phi2)
+% Unpredictability measure c(w) for MPEG-1 psychoacoustic model 2.
+% r,phi: current magnitude/phase; r1,phi1: frame t-1; r2,phi2: frame t-2.
+    % Linear prediction of magnitude and phase from the previous two frames.
+    r_pred   = 2 * r1   - r2;         % eq:pam2pred
+    phi_pred = 2 * phi1 - phi2;
+    % Real/imag components of the actual and predicted spectral points.
+    re_act  = r      .* cos(phi);   im_act  = r      .* sin(phi);
+    re_pred = r_pred .* cos(phi_pred);
+    im_pred = r_pred .* sin(phi_pred);
+    % Euclidean distance in the complex plane, normalised by the magnitudes.
+    dist = sqrt((re_act - re_pred).^2 + (im_act - im_pred).^2);
+    c    = dist ./ (r + abs(r_pred) + eps);
+    c    = max(0, min(1, c));         % clamp to [0,1]
+end
+\end{lstlisting}
+
+\begin{lstlisting}[style=matlabstyle,caption={pam2\_threshold.m --- per-partition threshold and SMR (excerpt)},label={lst:pam2thr}]
+function [thr, smr, info] = pam2_threshold(x, xm1, xm2, fs, thr_prev)
+% Per-partition masking threshold thr(b) and SMR for MPEG-1 model 2.
+    TMN = 18;  NMT = 6;                          % model-2 constants (dB)
+    x = x(:); xm1 = xm1(:); xm2 = xm2(:); N = numel(x);
+    w = 0.5 - 0.5 * cos(2*pi*(0:N-1)'/(N-1));    % Hann window (no toolbox)
+    [r, phi ] = mag_phase(x   .* w);             % eq:pam2fft
+    [r1,phi1] = mag_phase(xm1 .* w);
+    [r2,phi2] = mag_phase(xm2 .* w);
+    half = (N/2)+1;                              % one-sided spectrum
+    r=r(1:half); phi=phi(1:half); r1=r1(1:half); phi1=phi1(1:half);
+    r2=r2(1:half); phi2=phi2(1:half);
+    f_bin = (0:half-1)' * fs / N;
+    c = pam2_unpredictability(r, phi, r1, phi1, r2, phi2);   % eq:pam2unpred
+    % --- Bark-based partitions (eq:pam2part) ---
+    z_bin = hz2bark(max(f_bin, 20));  edges = (0:0.5:ceil(max(z_bin)/0.5)*0.5)';
+    nb_part = numel(edges)-1;  e = zeros(nb_part,1); ec = e; zc = e;
+    for b = 1:nb_part
+        in_b = (z_bin >= edges(b)) & (z_bin < edges(b+1));
+        if any(in_b)
+            e(b)=sum(r(in_b).^2); ec(b)=sum(r(in_b).^2 .* c(in_b));
+            zc(b)=mean(z_bin(in_b));
+        else, zc(b)=0.5*(edges(b)+edges(b+1)); end
+    end
+    % --- Spreading convolution (eq:pam2spread, eq:pam2cb) ---
+    S = zeros(nb_part);
+    for b = 1:nb_part, S(:,b) = 10.^(spreading_function(zc - zc(b))/10); end
+    ecb = S*e;  ct = S*ec;  cb = ct ./ (ecb + eps);
+    en  = ecb ./ (sum(S,2) + eps);
+    % --- Tonality (eq:tonality), required SNR (eq:snrreq), threshold (eq:nb) ---
+    t = max(0, min(1, -0.43*log(cb + eps) - 0.299));
+    snr_req = t*TMN + (1 - t)*NMT;
+    nb = en .* 10.^(-snr_req/10);
+    ath_lin = 10.^(ath_terhardt(max(bark2hz_centre(zc),20))/10);
+    thr = max(nb, ath_lin);                      % ATH flooring (eq:pam2floor)
+    if nargin >= 5 && ~isempty(thr_prev)         % pre-echo (eq:pam2preecho)
+        m = min(numel(thr), numel(thr_prev));
+        thr(1:m) = min(thr(1:m), thr_prev(1:m));
+    end
+    smr = 10*log10((e + eps) ./ (thr + eps));    % per-partition SMR
+    info = struct('z_centre',zc,'e',e,'en',en,'cb',cb,'tonality',t, ...
+                  'snr_req',snr_req,'edges',edges);
+end
+\end{lstlisting}
+
+\begin{lstlisting}[style=matlabstyle,caption={pam2\_demo.m --- driver excerpt: consecutive frames + 2-frame history},label={lst:pam2demo}]
+fs = 44100; N = 2048; n_frame = 4; f0 = 1000;
+% Synthesise consecutive frames: 1 kHz tone (slight drift) + noise.
+X_frames = zeros(N, n_frame);
+for k = 1:n_frame
+    idx = ((k-1)*N : k*N-1)';            % continuous phase across frames
+    amp = 1.0 - 0.05*(k-1);              % slight amplitude change
+    X_frames(:,k) = amp*sin(2*pi*f0*idx/fs) + 0.01*randn(N,1);
+end
+% Run PAM-2 with a 2-frame history; frames 1,2 seed the history.
+thr_prev = [];
+for k = 3:n_frame
+    [thr, smr, info] = pam2_threshold(X_frames(:,k), X_frames(:,k-1), ...
+                                      X_frames(:,k-2), fs, thr_prev);
+    thr_prev = thr;                      % carry forward for pre-echo control
+    fprintf('\n=== Frame %d ===\n', k);
+    for b = 1:numel(thr)
+        if info.e(b) > 0
+            fprintf('  z=%6.2f  t=%.3f  thr=%7.2f dB  SMR=%7.2f dB\n', ...
+                    info.z_centre(b), info.tonality(b), ...
+                    10*log10(thr(b)+eps), smr(b));
+        end
+    end
+end
+\end{lstlisting}
+
+세 함수의 완전한 실행 가능 버전은 각각 \texttt{matlab/pam2\_unpredictability.m},
+\texttt{matlab/pam2\_threshold.m}, \texttt{matlab/pam2\_demo.m}에 들어 있다. GNU
+Octave에서는 해당 디렉터리에서 \texttt{octave -{}-no-gui pam2\_demo.m}로, MATLAB
+에서는 \texttt{run pam2\_demo.m}로 실행한다.
+
 모델 2의 주요 차이점을 \Cref{tab:model12}에 정리한다.
 
 \begin{table}[htbp]
@@ -682,6 +904,221 @@ $\MNR$이 가장 낮은(가장 가청 위험이 큰) 서브밴드에 비트를 �
 주어진 비트 예산 내에서 최소 $\MNR$을 최대화한다. 목표는 모든 대역에서
 $\MNR(n)\ge 0$을 확보하여 양자화 잡음을 마스킹 문턱값 아래로 유지하는 것이다.
 비트가 부족하면 지각적으로 가장 덜 중요한 대역부터 열화를 허용한다.
+
+%==============================================================================
+\section{pam-nac 구현과의 비교 (Comparison with the pam-nac implementation)}\label{sec:comparison}
+%==============================================================================
+공개 저장소 \texttt{cocosci/pam-nac}\cite{pamnac}는 MPEG-1 심리음향 모델
+1(PAM-1)을 파이썬으로 재구현한 것으로, F.~A.~P.~Petitcolas의 MPEG 오디오 참조
+구현\cite{petitcolas}과 ISO/IEC 11172-3\cite{iso11172}을 바탕으로 한다. 이 절에서는
+본 문서의 PAM-1 정식화(\Cref{alg:pam1} 및 \Cref{sec:math}의 관련 수식)가 이 구현이
+실제로 수행하는 \emph{방법}과 어디까지 일치하는지, 그리고 어디에서 갈라지는지를
+소스 코드를 직접 대조하여 정직하게 정리한다. 결론부터 말하면 전체 파이프라인과
+대부분의 수식은 일치하며, \emph{하나의} 실질적 차이(확산 방식)와 \emph{하나의}
+구현상 뉘앙스(데시메이션 범위)가 존재한다.
+
+\subsection{일치하는 부분 (검증된 대응)}
+소스 코드 대조를 통해 다음 항목들이 본 문서의 정식화와 정확히 일치함을 확인하였다.
+
+\begin{itemize}
+  \item \textbf{전역 마스킹 문턱값(\Cref{eq:global}).} pam-nac의
+        \texttt{global\_threshold}(\texttt{calculate\_global\_masking\_threshold.py})는
+        절대 청취 문턱값과 톤성/비톤성 마스커의 개별 문턱값을 \emph{전력(에너지)
+        영역}에서 합산한 뒤 데시벨로 되돌린다. 즉 $10\log_{10}\!\bigl(\sum_l
+        10^{\,\mathrm{LT}_l/10}\bigr)$의 형태로, \Cref{eq:global}과 항 대 항으로
+        동일하다.
+  \item \textbf{마스킹 지수 $\mathrm{av}_{\mathrm{TM}}$, $\mathrm{av}_{\mathrm{NM}}$
+        (\Cref{eq:avtm,eq:avnm}).} \texttt{individual\_masking\_thresholds}
+        (\texttt{calculate\_individual\_mask.py})는 톤성 마스커에
+        $\texttt{avtm} = -1.525 - 0.275\,z_j - 4.5$, 비톤성 마스커에
+        $\texttt{avnm} = -1.525 - 0.175\,z_j - 0.5$를 사용한다. 이는 각각
+        \Cref{eq:avtm}, \Cref{eq:avnm}과 상수까지 동일하다($z_j$는 마스커의 Bark
+        위치).
+  \item \textbf{톤성 판별의 $7\dB$ 기준(\Cref{eq:tonal}).} \texttt{find\_tonal\_set}
+        (\texttt{calculate\_psd\_tonal\_maskers.py})는 국소 최대(local maximum)이면서
+        이웃 성분보다 $7\dB$ 이상 강한 성분을 톤성 마스커로 선정하고, 검사 대상
+        이웃 집합을 빈(bin) 범위에 따라 다르게 잡는다(저역·중역·고역에서 이웃 폭이
+        커짐). 이는 \Cref{eq:tonal}의 국소 최대 $+\,7\dB$ 규칙 및 대역 의존적 이웃
+        집합 $\Delta_k$와 일치한다.
+  \item \textbf{음압 레벨 정규화(\Cref{eq:psd}).} \texttt{cal\_psd}는 스펙트럼
+        전력을 정규화하여 최대 PSD가 \SI{96}{\dBSPL}에 대응하도록 한다. 이는
+        \Cref{eq:psd}에서 $\mathrm{PN}=\SI{90.302}{\decibel}$로 두어 만관(full-scale)
+        순음이 약 \SI{96}{\dBSPL}가 되도록 한 관례와 일치한다.
+  \item \textbf{전체 파이프라인(\Cref{alg:pam1}).} \texttt{one\_pass\_calculation}의
+        처리 순서 \texttt{cal\_psd} $\to$ \texttt{find\_tonal\_set} $\to$
+        \texttt{find\_non\_tonal\_set} $\to$ \texttt{decimation} $\to$
+        \texttt{individual\_masking\_thresholds} $\to$ \texttt{global\_threshold}는
+        \Cref{alg:pam1}의 단계 구성(정규화 $\to$ 톤성/비톤성 마스커 식별 $\to$
+        데시메이션 $\to$ 개별/전역 문턱값 합성)과 그대로 대응한다.
+\end{itemize}
+
+\subsection{실질적 차이: 확산 방식 (Schroeder vs.\ ISO piecewise \texorpdfstring{$vf$}{vf})}
+유일한 \emph{실질적} 차이는 개별 마스킹 문턱값을 인접 Bark 대역으로 확산하는 방식에
+있다. 본 문서의 \Cref{eq:spread}는 Schroeder의 2-기울기(two-slope) 확산 함수
+$\mathrm{SF}(\dz)$를 사용한다. 반면 pam-nac의
+\texttt{individual\_masking\_thresholds}는 ISO/IEC 11172-3\cite{iso11172}의
+\emph{레벨 의존적}(level-dependent) 조각별 마스킹 함수 $vf$를 사용하며, 이는
+Bark 거리 $\dz$의 구간 $-3 \le \dz < 8$에 대해 네 개의 선형 조각으로 정의된다.
+\begin{equation}\label{eq:vf}
+  vf(\dz, P_j) =
+  \begin{cases}
+    17\,(\dz + 1) - \bigl(0.4\,P_j + 6\bigr),
+      & -3 \le \dz < -1, \\[3pt]
+    \bigl(0.4\,P_j + 6\bigr)\,\dz,
+      & -1 \le \dz < 0, \\[3pt]
+    -17\,\dz,
+      & 0 \le \dz < 1, \\[3pt]
+    -(\dz - 1)\,\bigl(17 - 0.15\,P_j\bigr) - 17,
+      & 1 \le \dz < 8,
+  \end{cases}
+  \quad [\si{\decibel}]
+\end{equation}
+여기서 $\dz = z_i - z_j$는 피마스커와 마스커의 Bark 위치 차이이고, $P_j$는 마스커
+$j$의 음압 레벨(\dBSPL)이다. pam-nac은 개별 문턱값을
+$\mathrm{LT}(i) = P_j + \mathrm{av}_j + vf(\dz, P_j)$로 계산한다(우리
+\Cref{eq:indiv}에서 $\mathrm{SF}$ 대신 $vf$가 들어간 형태).
+
+두 방식 모두 PAM-1 계열의 정당한 선택이다. 다만 근본적인 차이가 하나 있다.
+\Cref{eq:vf}의 ISO $vf$는 두 번째($-1 \le \dz < 0$)와 네 번째($1 \le \dz < 8$)
+조각에서 마스커 레벨 $P_j$에 명시적으로 의존한다. 즉 강한 마스커일수록 특히
+고주파 방향의 기울기가 완만해져 마스킹이 더 넓게 퍼지는 \emph{레벨 의존성}을
+갖는다. 반면 \Cref{eq:spread}의 Schroeder 확산 함수는 $\dz$에만 의존하고 마스커
+레벨과 무관한 고정 형상이다. 따라서 본 문서의 정식화와 pam-nac은 \emph{동일한
+확산 함수를 쓰지 않으며}, 이 점을 과장하여 완전 일치로 서술해서는 안 된다.
+
+\subsection{구현상의 뉘앙스: 데시메이션(decimation)의 범위}
+\Cref{alg:pam1}의 데시메이션 단계는 (i) 절대 청취 문턱값 이하의 마스커 제거와
+(ii) $0.5\Bark$ 이내에 더 강한 마스커가 있으면 약한 쪽을 제거하는 규칙을 함께
+기술한다. 이는 ISO/IEC 11172-3 표준의 서술을 따른 것이다. 그러나 pam-nac의
+\texttt{decimation.py}는 \emph{실제로는} 절대 청취 문턱값 이하의 마스커
+($\mathrm{SPL} < \ATH$)만 제거하며, $0.5\Bark$ 이내 인접 마스커 중 더 강한 것만
+남기는 규칙은 (함수 설명 주석에는 언급되어 있으나) 코드로 구현되어 있지 않다.
+따라서 이 저장소의 데시메이션은 \emph{부분 구현}으로 보아야 하며, $0.5\Bark$
+규칙이 구현되어 있다고 주장해서는 안 된다.
+
+\subsection{대응 요약표}
+\Cref{tab:pamnac}는 본 문서의 수식/단계와 pam-nac의 함수/파일을 대응시키고 일치
+여부를 요약한 것이다.
+
+\begin{table}[htbp]
+  \centering
+  \caption{본 문서의 수식·단계와 pam-nac 구현의 대응 및 일치 여부}
+  \label{tab:pamnac}
+  \begin{tabular}{@{}p{0.30\textwidth}p{0.40\textwidth}p{0.22\textwidth}@{}}
+    \toprule
+    우리 문서 (수식/단계) & pam-nac 함수/파일 & 일치 여부 \\
+    \midrule
+    \Cref{eq:psd} (SPL 정규화) &
+      \texttt{cal\_psd} (\texttt{calculate\_psd\_tonal\_maskers.py}) &
+      일치 \\
+    \Cref{eq:tonal} / \Cref{alg:pam1} 톤성 단계 &
+      \texttt{find\_tonal\_set} (\texttt{calculate\_psd\_tonal\_maskers.py}) &
+      일치 \\
+    \Cref{alg:pam1} 비톤성 단계 &
+      \texttt{find\_non\_tonal\_set} (\texttt{calculate\_non\_tonal\_maskers.py}) &
+      일치 \\
+    \Cref{alg:pam1} 데시메이션 &
+      \texttt{decimation} (\texttt{decimation.py}) &
+      부분 일치 (ATH만, $0.5\Bark$ 미구현) \\
+    \Cref{eq:indiv} + \Cref{eq:avtm,eq:avnm} (마스킹 지수) &
+      \texttt{individual\_masking\_thresholds} (av 지수 부분) &
+      일치 \\
+    \Cref{eq:spread} (확산 함수) &
+      \texttt{individual\_masking\_thresholds}의 $vf$ (\Cref{eq:vf}) &
+      불일치 (Schroeder vs.\ ISO piecewise $vf$) \\
+    \Cref{eq:global} (전역 문턱값) &
+      \texttt{global\_threshold} (\texttt{calculate\_global\_masking\_threshold.py}) &
+      일치 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+요약하면, 본 문서의 PAM-1은 pam-nac이 구현한 \emph{방법}과 정규화·톤성 판별·마스킹
+지수·전역 문턱값 합성·전체 파이프라인에서 일치하며, 차이는 확산 함수(Schroeder
+대 ISO 레벨 의존 $vf$)와 데시메이션의 구현 범위(ATH만 적용)에 국한된다.
+
+%==============================================================================
+\section{심리음향 손실 함수 구성 전략 (Psychoacoustic loss-function design)}\label{sec:loss}
+%==============================================================================
+심리음향 모델은 종단간(end-to-end) 신경망 오디오 부호화기의 \emph{손실 함수}로도
+활용할 수 있다. 핵심 착상은 단순한 파형/스펙트럼 오차 대신, \emph{사람이 실제로
+듣는} 성분의 오차에 더 큰 가중치를 두어 최적화하는 것이다. 이 절에서는 pam-nac이
+채택한 방식(Zhen 외, 2020\cite{zhen2020})을 근거로, PAM-1을 학습 손실로 전환하는
+전략을 정리한다.
+
+\subsection{전역 마스킹 문턱값의 오프라인 사전 계산}
+PAM-1의 마스커 선정 과정---국소 최대 탐색, $7\dB$ 톤성 판정, 데시메이션---은
+\emph{이산적}이고 미분 불가능하다. 따라서 학습 중 매 스텝마다 이를 역전파에 태우는
+것은 어렵다. pam-nac은 이 문제를 우회하여, 각 프레임의 전역 마스킹 문턱값
+$T_g$(\Cref{eq:global})를 \emph{학습 이전에 오프라인으로} PAM-1로 한 번 계산해 두고,
+학습 중에는 이를 \emph{상수 텐서}로 취급(detach)하여 손실 계산에만 사용한다. 즉
+$T_g$는 미분 대상이 아니라 지각적 가중치를 제공하는 고정 입력이다.
+
+\subsection{두 가지 손실 항}
+pam-nac은 위 $T_g$를 이용한 두 가지 미분 가능한 손실 항을 정의한다. 원신호를
+$x$, 복호(디코딩) 신호를 $\hat{x}$라 하고, 각 프레임의 PSD(단측, dB 척도)를
+$P_x(k)$, $P_{\hat{x}}(k)$라 하자($k$는 주파수 인덱스).
+
+첫째는 \emph{SMR 우선순위 가중 스펙트럼 MSE}이다. 각 주파수 빈의 우선순위
+가중치를
+\begin{equation}\label{eq:smrloss}
+  w(k) = \log_{10}\!\left(
+     \frac{10^{\,0.1\,P_x(k)}}{10^{\,0.1\,T_g(k)}} + 1
+  \right),
+  \qquad
+  \mathcal{L}_{\mathrm{SMR}}
+   = \frac{1}{K}\sum_{k=1}^{K}
+     \bigl(P_x(k) - P_{\hat{x}}(k)\bigr)^{2}\, w(k),
+\end{equation}
+로 정의한다. 여기서 $T_g(k)$는 \Cref{eq:global}로 사전 계산한 전역 마스킹
+문턱값(dB), $K$는 프레임당 주파수 빈 수이다. 가중치 $w(k)$는 신호 전력이 마스킹
+문턱값을 초과하는(즉 지각적으로 들리는) 대역에서 커지므로, 손실이 \emph{귀에 들리는}
+대역의 스펙트럼 오차를 우선적으로 줄이도록 유도한다. 이는 pam-nac의
+\texttt{smr\_loss}(priority $= \log_{10}(10^{0.1\,\mathrm{ori\_psd}} /
+10^{0.1\,\mathrm{GMS}} + 1)$, 그 뒤 $(\mathrm{ori\_psd} - \mathrm{dec\_psd})^2$에
+곱하여 평균)와 동일한 형태이다.
+
+둘째는 \emph{잡음 대 마스크 비(NMR)의 상한 최소화}로, 복호 오차의 PSD가 마스킹
+문턱값을 넘는 최악 대역을 억제한다.
+\begin{equation}\label{eq:nmrloss}
+  \mathcal{L}_{\mathrm{NMR}}
+   = \max_{k}\ \operatorname{ReLU}\!\left(
+     \frac{\psi\bigl(P_{\hat{x}-x}(k)\bigr)}{\psi\bigl(T_g(k)\bigr)} - 1
+   \right),
+  \qquad
+  \psi(P) = 10^{\,(P - 96)/10},
+\end{equation}
+여기서 $P_{\hat{x}-x}(k)$는 \emph{오차 신호} $\hat{x}-x$의 PSD(dB), $\psi(\cdot)$는
+dB-SPL 값을 선형 PSD로 되돌리는 변환(pam-nac의 \texttt{log\_psd\_to\_psd},
+$96$은 만관 기준 레벨)이다. 비 $\psi(P_{\hat{x}-x})/\psi(T_g)$가 $1$을 넘으면
+오차가 마스킹 문턱값을 초과하여 \emph{가청 잡음}이 되므로, $\operatorname{ReLU}$로
+그 초과분만 벌하고 모든 빈에 대한 \emph{최댓값}을 취해 최악의 대역을 눌러 준다.
+이는 pam-nac의 \texttt{nmr\_max\_mean\_loss}와 동일한 형태이다.
+
+\subsection{설계상의 고려와 실무 지침}
+위 두 손실을 학습에 적용할 때 고려할 점을 정리하면 다음과 같다.
+
+\begin{itemize}
+  \item \textbf{문턱값의 분리(detach) 대 미분 가능 근사.} 앞서 설명했듯 PAM-1의
+        마스커 선정은 미분 불가능하므로 $T_g$를 오프라인 상수로 두는 것이 가장
+        간단하다. 다만 문턱값을 학습에 반응시키고 싶다면, 고정된 확산 행렬
+        (spreading matrix)과의 합성곱으로 마스킹을 근사하는 \emph{미분 가능한}
+        대안을 쓸 수 있다. 이 경우 톤성 판별 같은 이산 단계를 부드러운(soft)
+        근사로 대체하거나 생략한다.
+  \item \textbf{가중/정규화.} SMR 우선순위 가중치 $w(k)$(\Cref{eq:smrloss})는
+        신호가 문턱값을 초과하는 대역, 곧 귀가 실제로 듣는 대역을 강조한다.
+        문턱값 아래의 대역은 자연히 가중치가 작아져 비트/표현력을 덜 쓰도록
+        유도된다.
+  \item \textbf{다른 손실과의 결합.} 심리음향 손실만으로는 학습이 불안정할 수
+        있으므로, 일반 파형/스펙트럼 MSE나 멜(mel) 척도 손실과 결합하고, 각 항에
+        손실 계수(pam-nac의 \texttt{loss\_coeff})를 두어 균형을 맞춘다.
+  \item \textbf{프레임 단위 처리.} $T_g$는 프레임별로 사전 계산되므로, 손실도
+        프레임 단위 STFT/PSD 위에서 계산하여 사전 계산된 문턱값과 정렬해야 한다.
+\end{itemize}
+
+이러한 전략은 Zhen 외(2020)\cite{zhen2020}가 제안한 \emph{손실 함수의 심리음향
+보정}(psychoacoustic calibration of loss functions)의 요지로, 동일 비트율에서
+지각 품질을 높이거나 동일 품질에서 비트율을 낮추는 데 기여한다.
 
 %==============================================================================
 \section{MATLAB 예제 코드}\label{sec:matlab}
@@ -865,6 +1302,23 @@ end
   ``Transform coding of audio signals using perceptual noise criteria,''
   \emph{IEEE Journal on Selected Areas in Communications},
   vol.~6, no.~2, pp.~314--323, 1988.
+
+\bibitem{zhen2020}
+  K.~Zhen, M.~S.~Lee, J.~Sung, S.~Beack, and M.~Kim,
+  ``Psychoacoustic Calibration of Loss Functions for Efficient End-to-End
+  Neural Audio Coding,''
+  \emph{IEEE Signal Processing Letters}, 2020.
+  \url{https://saige.sice.indiana.edu/wp-content/uploads/spl2020_kzhen.pdf}
+
+\bibitem{petitcolas}
+  F.~A.~P.~Petitcolas,
+  MPEG audio reference implementation,
+  \url{https://www.petitcolas.net/fabien/software/mpeg/}
+
+\bibitem{pamnac}
+  cocosci,
+  pam-nac: A Python Version of Psychoacoustic Model-I,
+  \url{https://github.com/cocosci/pam-nac}
 \end{thebibliography}
 
 \end{document}

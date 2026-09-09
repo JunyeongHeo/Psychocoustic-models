@@ -105,6 +105,9 @@ latexmk -xelatex main.tex
 | [`matlab/critical_bandwidth.m`](matlab/critical_bandwidth.m) | 임계대역폭 | eq:cbw |
 | [`matlab/spreading_function.m`](matlab/spreading_function.m) | Schroeder 2-기울기 확산 함수 | eq:spread |
 | [`matlab/demo_psychoacoustic.m`](matlab/demo_psychoacoustic.m) | 구동 스크립트(FFT·SPL 정규화·마스킹 문턱값·SMR) | eq:psd, eq:global, eq:smr |
+| [`matlab/pam2_unpredictability.m`](matlab/pam2_unpredictability.m) | PAM-2 불예측성 측도 c(w) | eq:pam2unpred |
+| [`matlab/pam2_threshold.m`](matlab/pam2_threshold.m) | PAM-2 분할별 마스킹 문턱값·SMR (톤성·요구 SNR·ATH 하한·사전 반향) | eq:tonality, eq:snrreq, eq:nb |
+| [`matlab/pam2_demo.m`](matlab/pam2_demo.m) | PAM-2 구동 스크립트(연속 프레임 합성 + 2-프레임 이력) | — |
 
 ### 실행 방법
 
@@ -114,12 +117,14 @@ latexmk -xelatex main.tex
 # GNU Octave (헤드리스)
 cd matlab
 octave --no-gui demo_psychoacoustic.m
+octave --no-gui pam2_demo.m          # MPEG-1 심리음향 모델 2 데모
 ```
 
 ```matlab
 % MATLAB
 cd matlab
 run demo_psychoacoustic.m
+run pam2_demo.m                      % MPEG-1 심리음향 모델 2 데모
 ```
 
 스크립트는 ATH 곡선, 확산 함수, 스펙트럼·마스킹 문턱값 그림을 PNG(`fig_ath.png`,
