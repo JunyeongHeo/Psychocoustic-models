@@ -10,7 +10,8 @@
 - **권장 엔진**: XeLaTeX (기본) 또는 LuaLaTeX
   - 한글 조판을 위해 `kotex` 패키지가 `fontspec`을 통해 CJK 폰트를 사용하므로, `pdflatex`가 아닌 **XeLaTeX/LuaLaTeX**를 사용해야 합니다.
 - **한국어 패키지**: `kotex`
-- **권장 폰트**: Noto Serif CJK KR / Noto Sans CJK KR, 또는 나눔(Nanum) 계열
+- **사용 폰트**: **Noto Serif CJK KR / Noto Sans CJK KR** (한글), **Noto Serif / Noto Sans** (라틴)
+  - `main.tex` preamble에 명시적으로 지정되어 있으므로 이 폰트들이 시스템에 설치되어 있어야 합니다.
 
 ## 필수 패키지 / 폰트 준비
 
@@ -55,14 +56,18 @@ latexmk -xelatex main.tex
 
 ## 폰트 교체
 
-기본적으로 `kotex`가 설치된 한글 폰트를 자동 선택합니다. 특정 폰트를 강제하려면
-`main.tex` preamble의 다음 주석 블록을 해제하여 수정하십시오.
+이 문서는 **Noto CJK** 폰트를 사용하도록 `main.tex` preamble에 지정되어 있습니다.
 
 ```latex
 \setmainfont{Noto Serif}
+\setsansfont{Noto Sans}
 \setmainhangulfont{Noto Serif CJK KR}
 \setsanshangulfont{Noto Sans CJK KR}
-% 나눔 계열 대안:
+```
+
+다른 폰트로 바꾸려면 위 지정을 수정하십시오. (예: 나눔 계열)
+
+```latex
 % \setmainhangulfont{NanumMyeongjo}
 % \setsanshangulfont{NanumGothic}
 ```
