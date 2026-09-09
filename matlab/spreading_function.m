@@ -17,6 +17,13 @@ function sf = spreading_function(dz)
 %       dz = -6:0.1:6;
 %       sf = spreading_function(dz);
 %       plot(dz, sf); grid on;
+%
+%   References
+%   ----------
+%     * T. Painter and A. Spanias, "Perceptual Coding of Digital Audio,"
+%       Proceedings of the IEEE, vol. 88, no. 4, 2000 (Schroeder two-slope
+%       spreading function; see eq:spread in main.tex).
+%     * ISO/IEC 11172-3 (MPEG-1 Audio).
 
     % Element-wise operators keep this valid for scalar or vector input.
     sf = 15.81 + 7.5 * (dz + 0.474) ...

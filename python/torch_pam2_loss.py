@@ -131,6 +131,19 @@ def nmr_max_loss(orig_sig, decoded_sig, gms, n_fft, hop):
                        log_psd_to_psd(diff_psd) / log_psd_to_psd(gms) - 1 ) )
 
     ``gms`` is the precomputed PAM-2 global masking threshold (dB), detached.
+
+    Reduction note (deviation from the TF original)
+    -----------------------------------------------
+    pam-nac's TensorFlow ``nmr_max_mean_loss`` applies a single ``reduce_max``
+    over the last axis, returning a per-frame value that the surrounding
+    training loop then averages. This port folds that averaging in: it takes
+    ``amax`` over the frequency bins (the worst-bin maximum, matching the TF
+    ``reduce_max``) and then additionally averages the per-frame maxima over
+    the frame and batch dimensions, so the function returns a single scalar.
+    This is consistent with the ``max_mean`` naming (max over bins, mean over
+    frames) and is convenient/stable for direct use as a loss term, but it is
+    therefore not a bit-identical mirror of the TF reduction, which stops after
+    the ``max`` and leaves the mean to the caller.
     """
     gms = gms.detach()  # non-differentiable, precomputed threshold
     diff_psd = stft_psd(decoded_sig - orig_sig, n_fft, hop)

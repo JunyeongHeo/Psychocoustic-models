@@ -10,6 +10,12 @@ function bw = critical_bandwidth(f)
 %   with frequency above that.
 %
 %   Base MATLAB / GNU Octave compatible (no toolboxes required).
+%
+%   References
+%   ----------
+%     * E. Zwicker and H. Fastl, "Psychoacoustics: Facts and Models," Springer
+%       (critical-bandwidth approximation; see eq:cbw in main.tex).
+%     * ISO/IEC 11172-3 (MPEG-1 Audio).
 
     bw = 25 + 75 * (1 + 1.4 * (f / 1000).^2).^0.69;
 end

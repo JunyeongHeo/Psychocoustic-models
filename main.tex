@@ -39,6 +39,10 @@
 % siunitx v3 는 bit/byte 단위를 기본 제공하지 않으므로 명시적으로 선언한다.
 \DeclareSIUnit\bit{bit}
 \DeclareSIUnit\byte{B}
+% Bark 는 siunitx 단위가 아니므로, \SIrange 등 단위 인자에서 쓰려면 별도로
+% 선언해야 한다. 아래 math 매크로 \Bark 와 이름이 겹치지 않도록 소문자 \bark 로
+% 선언한다(\Bark 는 수식 본문의 "0.5\,Bark" 표기에 계속 사용된다).
+\DeclareSIUnit\bark{Bark}
 
 %--- 표 ---------------------------------------------------------------------
 \usepackage{booktabs}
@@ -229,8 +233,8 @@ maskee)의 청취 문턱값이 상승하는 현상이다. 두 가지로 구분�
 영향은 저주파 방향보다 고주파 방향으로 훨씬 넓게 퍼진다. 이는 기저막의 진행파
 (traveling wave)가 기저부(고주파)에서 정점을 이룬 뒤 첨단부(저주파) 쪽으로
 비대칭적으로 감쇠하는 물리적 특성에서 기인한다. 그 결과 마스킹 곡선은 Bark 축에서
-저주파 쪽 기울기(약 \SIrange{-27}{-15}{\decibel\per\Bark})가 고주파 쪽 기울기(마스커
-레벨에 따라 대략 \SIrange{-24}{-6}{\decibel\per\Bark})보다 가파른, 비대칭
+저주파 쪽 기울기(약 \SIrange{-27}{-15}{\decibel\per\bark})가 고주파 쪽 기울기(마스커
+레벨에 따라 대략 \SIrange{-24}{-6}{\decibel\per\bark})보다 가파른, 비대칭
 삼각형에 가까운 형태를 띤다. 이 확산 거동은 \Cref{sec:math}의 확산
 함수(\Cref{eq:spread})로 정량화한다.
 
