@@ -54,6 +54,42 @@
 \usepackage{algorithm}
 \usepackage{algpseudocodex}
 
+%--- 소스 코드 리스팅 (MATLAB) ------------------------------------------------
+% minted 는 shell-escape 와 Pygments 가 필요하므로 사용하지 않고, listings +
+% xcolor 로 MATLAB 코드를 조판한다. 코드는 \ttfamily 를 사용하므로 별도의
+% 모노스페이스 폰트를 지정하지 않아도 되며, 기존 Noto CJK 폰트 설정에 영향을
+% 주지 않는다.
+\usepackage{xcolor}
+\usepackage{listings}
+% 코드 하이라이트 색상 정의
+\definecolor{codekeyword}{RGB}{0,0,180}    % 예약어(파랑)
+\definecolor{codecomment}{RGB}{0,128,0}    % 주석(초록)
+\definecolor{codestring}{RGB}{160,32,32}   % 문자열(적갈색)
+\definecolor{codeframe}{RGB}{200,200,200}  % 테두리(회색)
+\definecolor{codebg}{RGB}{248,248,248}     % 배경(밝은 회색)
+\lstdefinestyle{matlabstyle}{%
+  language=Matlab,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekeyword}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestring},
+  numberstyle=\ttfamily\tiny\color{gray},
+  numbers=left,
+  numbersep=8pt,
+  stepnumber=1,
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=4,
+  frame=single,
+  rulecolor=\color{codeframe},
+  backgroundcolor=\color{codebg},
+  captionpos=b,
+  columns=fullflexible,
+  keepspaces=true,
+}
+\lstset{style=matlabstyle}
+
 %--- 하이퍼링크 및 상호참조 ---------------------------------------------------
 \usepackage[hidelinks]{hyperref}
 \usepackage{cleveref}
@@ -646,6 +682,120 @@ $\MNR$이 가장 낮은(가장 가청 위험이 큰) 서브밴드에 비트를 �
 주어진 비트 예산 내에서 최소 $\MNR$을 최대화한다. 목표는 모든 대역에서
 $\MNR(n)\ge 0$을 확보하여 양자화 잡음을 마스킹 문턱값 아래로 유지하는 것이다.
 비트가 부족하면 지각적으로 가장 덜 중요한 대역부터 열화를 허용한다.
+
+%==============================================================================
+\section{MATLAB 예제 코드}\label{sec:matlab}
+%==============================================================================
+이 절에서는 앞서 정의한 핵심 수식을 \emph{간단한} MATLAB 코드로 구현하여, 이론을
+직접 계산·시각화하는 방법을 안내한다. 아래 코드는 기본 MATLAB 및 GNU Octave에서
+그대로 실행되며 별도의 특수 툴박스(Signal Processing Toolbox 등)를 요구하지 않는다.
+완전한 실행 가능 스크립트는 저장소의 \texttt{matlab/} 디렉터리에 들어 있으며, 본
+절에는 핵심 함수와 구동 스크립트를 그대로 싣는다. 코드와 주석은 (사용자 언어 정책에
+따라) 영어로 작성한다.
+
+각 함수는 문서의 수식과 다음과 같이 대응한다.
+\begin{itemize}
+  \item \texttt{ath\_terhardt.m} --- 절대 청취 문턱값(\Cref{eq:ath}, Terhardt).
+  \item \texttt{hz2bark.m} --- 선형 주파수의 Bark 척도 변환(\Cref{eq:bark}, Zwicker).
+  \item \texttt{critical\_bandwidth.m} --- 임계대역폭(\Cref{eq:cbw}).
+  \item \texttt{spreading\_function.m} --- Schroeder 2-기울기 확산 함수(\Cref{eq:spread}).
+  \item \texttt{demo\_psychoacoustic.m} --- 위 함수들을 이용해 ATH·확산 함수를
+        그리고, 합성 신호의 Hann 창 FFT를 \dBSPL로 정규화(\Cref{eq:psd})한 뒤
+        전역 마스킹 문턱값(\Cref{eq:global})과 대역별 \SMR(\Cref{eq:smr})을
+        스케치하는 구동 스크립트.
+\end{itemize}
+
+\subsection{절대 청취 문턱값과 Bark 변환}
+\Cref{lst:ath}는 Terhardt 절대 청취 문턱값(\Cref{eq:ath})을, \Cref{lst:bark}는
+Zwicker의 Hz$\to$Bark 변환(\Cref{eq:bark})을 구현한다. 두 함수 모두 스칼라와 벡터
+입력을 모두 처리하도록 원소별 연산자(\texttt{.\^{}}, \texttt{.*})를 사용한다.
+
+\begin{lstlisting}[caption={ath\_terhardt.m --- Absolute Threshold of Hearing (eq:ath)},label={lst:ath}]
+function Tq = ath_terhardt(f)
+% ATH_TERHARDT  Absolute Threshold of Hearing (Terhardt approximation).
+%   Tq = ATH_TERHARDT(f) returns the ATH in dB SPL for frequency vector f (Hz),
+%   implementing eq:ath from the accompanying document.
+    fk = f / 1000;                       % work in kHz
+    Tq = 3.64 * fk.^(-0.8) ...
+       - 6.5  * exp(-0.6 * (fk - 3.3).^2) ...
+       + 1e-3 * fk.^4;
+end
+\end{lstlisting}
+
+\begin{lstlisting}[caption={hz2bark.m --- Hz to Bark scale conversion (eq:bark)},label={lst:bark}]
+function z = hz2bark(f)
+% HZ2BARK  Convert frequency in Hz to the Bark (critical-band) scale (eq:bark).
+    z = 13 * atan(0.00076 * f) ...
+      + 3.5 * atan((f / 7500).^2);
+end
+\end{lstlisting}
+
+\subsection{확산 함수}
+\Cref{lst:spread}는 Schroeder 2-기울기 확산 함수(\Cref{eq:spread})를 구현한다.
+Bark 축 거리 $\dz$에 대해 고주파 방향($\dz>0$)으로 완만히, 저주파 방향($\dz<0$)으로
+가파르게 감소하는 마스킹의 비대칭성을 그대로 재현한다.
+
+\begin{lstlisting}[caption={spreading\_function.m --- Schroeder two-slope spreading (eq:spread)},label={lst:spread}]
+function sf = spreading_function(dz)
+% SPREADING_FUNCTION  Schroeder two-slope masking spreading function (eq:spread).
+%   dz = z_maskee - z_masker (Bark). Returns masking attenuation in dB.
+    sf = 15.81 + 7.5 * (dz + 0.474) ...
+       - 17.5 * sqrt(1 + (dz + 0.474).^2);
+end
+\end{lstlisting}
+
+\subsection{구동 스크립트}
+\Cref{lst:demo}의 구동 스크립트는 위 함수들을 결합한다. \SI{1}{\kilo\hertz} 순음과
+잡음의 합성 신호에 Hann 창을 곱하여 FFT를 취하고, \Cref{eq:psd}의 전력 정규화
+($\mathrm{PN}=\SI{90.302}{\decibel}$)로 \dBSPL 스펙트럼을 얻는다. 이어 지배적 톤성
+정점을 찾아 확산 함수와 톤성 마스킹 지수(\Cref{eq:avtm})로 개별 문턱값을 만들고,
+절대 청취 문턱값과 전력 영역에서 합산하여 전역 마스킹 문턱값(\Cref{eq:global})을
+스케치한 뒤, 대역별 \SMR(\Cref{eq:smr})을 출력한다. Hann 창은 툴박스 없이
+$w[n]=0.5-0.5\cos\bigl(2\pi n/(N-1)\bigr)$로 직접 만든다. 그림 생성은 헤드리스
+환경에서도 안전하도록 보이지 않는 도형으로 만들어 PNG로 저장하며, 그래픽 백엔드가
+없으면 수치 결과만 출력하고 계속 진행한다. 지면 관계상 아래에는 신호 합성부터 대역별
+\SMR 계산까지의 핵심 부분을 발췌하여 싣는다(전체 스크립트는 \texttt{matlab/demo\_psychoacoustic.m}).
+
+\begin{lstlisting}[caption={demo\_psychoacoustic.m --- driver excerpt: FFT, SPL normalization, masking threshold, SMR},label={lst:demo}]
+% --- Synthetic test signal: 1 kHz tone + white noise ---
+fs = 44100; N = 2048; n = (0:N-1)'; f0 = 1000;
+x  = 1.0 * sin(2*pi*f0*n/fs) + 0.01 * randn(N,1);
+
+% --- Hann-windowed FFT frame -> dB SPL (eq:psd) ---
+w  = 0.5 - 0.5 * cos(2*pi*(0:N-1)'/(N-1));   % Hann window (no toolbox)
+X  = fft(x .* w);
+half = (N/2) + 1; Xh = X(1:half);
+f_bin = (0:half-1)' * fs / N;
+PN = 90.302; wsum = sum(w.^2);               % power normalization (eq:psd)
+P  = PN + 10*log10((2*abs(Xh).^2)/(N*wsum) + eps);
+Tq_bins = ath_terhardt(max(f_bin, 1));       % ATH on the FFT grid (eq:ath)
+
+% --- Dominant tonal peak and global masking threshold sketch (eq:global) ---
+[peak_level, peak_idx] = max(P(2:end)); peak_idx = peak_idx + 1;
+peak_freq = f_bin(peak_idx); peak_bark = hz2bark(peak_freq);
+z_bins = hz2bark(max(f_bin, 1));
+av_tm  = -1.525 - 0.275*peak_bark - 4.5;     % tonal masking index (eq:avtm)
+T_ind  = peak_level + av_tm + spreading_function(z_bins - peak_bark);
+T_glob = 10*log10(10.^(Tq_bins/10) + 10.^(T_ind/10) + eps);
+
+% --- Per-band SMR sketch (eq:smr) ---
+band_edges_bark = 0:2:24;
+for b = 1:(length(band_edges_bark)-1)
+    in_band = (z_bins >= band_edges_bark(b)) & (z_bins < band_edges_bark(b+1));
+    if any(in_band)
+        Ls_band   = max(P(in_band));         % band signal level
+        Tmin_band = min(T_glob(in_band));    % min masking threshold (eq:minmask)
+        smr_band  = Ls_band - Tmin_band;     % SMR (eq:smr)
+        fprintf('  band %2d: Ls=%6.2f dB, SMR=%6.2f dB\n', b, Ls_band, smr_band);
+    end
+end
+\end{lstlisting}
+
+\Cref{lst:ath,lst:bark,lst:spread}의 함수와 \Cref{lst:demo}의 구동 스크립트를
+\texttt{matlab/} 디렉터리에서 실행하면 된다. MATLAB에서는
+\texttt{run demo\_psychoacoustic.m}, GNU Octave에서는 해당 디렉터리에서
+\texttt{octave -{}-no-gui demo\_psychoacoustic.m}로 실행한다. 자세한 실행 방법은
+\texttt{README.md}를 참고하라.
 
 %==============================================================================
 \section{맺음말}

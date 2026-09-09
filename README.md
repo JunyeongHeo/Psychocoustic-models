@@ -27,12 +27,12 @@ sudo apt-get install texlive-xetex texlive-lang-korean fonts-noto-cjk
 
 ```sh
 tlmgr install kotex-utf collection-langkorean latexmk algorithmicx booktabs \
-              siunitx pgfplots cleveref mathtools algpseudocodex
+              siunitx pgfplots cleveref mathtools algpseudocodex listings xcolor
 ```
 
 필요한 주요 LaTeX 패키지: `kotex`, `fontspec`, `amsmath`, `amssymb`, `mathtools`,
 `siunitx`, `booktabs`, `array`, `graphicx`, `tikz`, `pgfplots`, `algorithm`,
-`algpseudocodex`, `hyperref`, `cleveref`, `geometry`.
+`algpseudocodex`, `hyperref`, `cleveref`, `geometry`, `listings`, `xcolor`.
 
 ## 컴파일 방법
 
@@ -88,6 +88,61 @@ latexmk -xelatex main.tex
    톤성/비톤성 마스커 판별, 개별·전역 마스킹 문턱값, SMR/MNR/SNR 관계
 3. **알고리즘 및 구현 기법** — MPEG-1 심리음향 모델 1·2 의사코드, 비트 할당과의 결합,
    TikZ/pgfplots 그림, booktabs 표
+4. **MATLAB 예제 코드** — 핵심 수식(ATH, Bark 변환, 확산 함수)의 MATLAB 구현을
+   `listings` 패키지로 조판하고, 실행 가능한 스크립트를 `matlab/` 디렉터리로 제공
+
+## MATLAB / GNU Octave 예제 코드
+
+문서의 핵심 수식을 직접 계산·시각화하는 **간단한** MATLAB 예제를 `matlab/`
+디렉터리에 함께 제공합니다. 코드는 **기본(base) MATLAB 및 GNU Octave**에서 그대로
+실행되며, **특수 툴박스(예: Signal Processing Toolbox)를 요구하지 않습니다**
+(Hann 창도 툴박스 없이 직접 생성).
+
+| 파일 | 내용 | 대응 수식 |
+| --- | --- | --- |
+| [`matlab/ath_terhardt.m`](matlab/ath_terhardt.m) | 절대 청취 문턱값(Terhardt) | eq:ath |
+| [`matlab/hz2bark.m`](matlab/hz2bark.m) | Hz → Bark 척도 변환(Zwicker) | eq:bark |
+| [`matlab/critical_bandwidth.m`](matlab/critical_bandwidth.m) | 임계대역폭 | eq:cbw |
+| [`matlab/spreading_function.m`](matlab/spreading_function.m) | Schroeder 2-기울기 확산 함수 | eq:spread |
+| [`matlab/demo_psychoacoustic.m`](matlab/demo_psychoacoustic.m) | 구동 스크립트(FFT·SPL 정규화·마스킹 문턱값·SMR) | eq:psd, eq:global, eq:smr |
+
+### 실행 방법
+
+`matlab/` 디렉터리로 이동한 뒤 구동 스크립트를 실행합니다.
+
+```sh
+# GNU Octave (헤드리스)
+cd matlab
+octave --no-gui demo_psychoacoustic.m
+```
+
+```matlab
+% MATLAB
+cd matlab
+run demo_psychoacoustic.m
+```
+
+스크립트는 ATH 곡선, 확산 함수, 스펙트럼·마스킹 문턱값 그림을 PNG(`fig_ath.png`,
+`fig_spread.png`, `fig_masking.png`)로 저장하고, 검출된 톤성 정점과 대역별 SMR을
+콘솔에 출력합니다. 그래픽 백엔드가 없는 환경에서는 그림 생성을 건너뛰고 수치
+결과만 출력하도록 안전하게 처리되어 있습니다.
+
+### LaTeX 리스팅 패키지
+
+MATLAB 코드를 문서(`main.tex`)에 싣기 위해 `listings`와 `xcolor` 패키지를
+추가했습니다(`minted`는 shell-escape와 Pygments가 필요하여 사용하지 않았습니다).
+`tlmgr` 사용 시 다음을 함께 설치하십시오.
+
+```sh
+tlmgr install listings xcolor
+```
+
+### 이 샌드박스에 대한 주의사항 (MATLAB/Octave)
+
+이 문서를 작성한 샌드박스에는 **MATLAB/Octave가 설치되어 있지 않고 네트워크가
+차단(INTEGRATIONS_ONLY)되어 설치도 불가능**하므로, `.m` 스크립트는 **샌드박스
+안에서 실행되지 않았습니다**. 위 스크립트는 기본 MATLAB/Octave에서 실행하도록
+작성된 정상 소스이며, 실행은 위 준비를 갖춘 **외부 환경**에서 수행하십시오.
 
 ## 참고 문헌
 
