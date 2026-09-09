@@ -165,6 +165,33 @@ maskee)의 청취 문턱값이 상승하는 현상이다. 두 가지로 구분�
 마스커가 순음에 가까운 톤성(tonal)인지 잡음에 가까운 비톤성(non-tonal)인지에 따라
 마스킹 능력이 다르며, 이 차이는 \Cref{sec:math,sec:algorithm}에서 정량화한다.
 
+\subsection{마스킹의 비대칭성과 확산}
+동시 마스킹을 더 정밀하게 이해하려면 두 가지 비대칭성을 구분해야 한다. 첫째는
+\emph{주파수 축(Bark 축)에서의 확산 비대칭}이다. 하나의 마스커가 만드는 마스킹
+영향은 저주파 방향보다 고주파 방향으로 훨씬 넓게 퍼진다. 이는 기저막의 진행파
+(traveling wave)가 기저부(고주파)에서 정점을 이룬 뒤 첨단부(저주파) 쪽으로
+비대칭적으로 감쇠하는 물리적 특성에서 기인한다. 그 결과 마스킹 곡선은 Bark 축에서
+저주파 쪽 기울기(약 \SIrange{-27}{-15}{\decibel\per\Bark})가 고주파 쪽 기울기(마스커
+레벨에 따라 대략 \SIrange{-24}{-6}{\decibel\per\Bark})보다 가파른, 비대칭
+삼각형에 가까운 형태를 띤다. 이 확산 거동은 \Cref{sec:math}의 확산
+함수(\Cref{eq:spread})로 정량화한다.
+
+둘째는 마스커의 성질에 따른 \emph{톤-잡음 비대칭}(tone--noise asymmetry)이다.
+동일한 음압이라도 잡음성 마스커는 톤성 마스커보다 더 강하게 마스킹한다.
+\emph{잡음이 순음을 가리는}(noise-masking-tone, NMT) 경우 임계대역 내에서 잡음의
+전대역 에너지가 순음을 덮으므로, 순음은 대체로 마스커 레벨보다 약
+\SI{4}{\decibel} 낮은 지점에서 겨우 들린다(즉 SMR $\approx \SI{4}{\decibel}$).
+반면 \emph{순음이 잡음을 가리는}(tone-masking-noise, TMN) 경우에는 잡음이 들리지
+않으려면 마스커보다 약 \SIrange{21}{28}{\decibel}(대략 $\SI{14.5}{\decibel} +
+z$ 규칙)만큼 낮아야 한다. 이 큰 차이 때문에 마스킹 문턱값을 계산할 때 마스커의
+톤성 여부를 반드시 판별해야 하며(\Cref{eq:tonal}), 톤성/비톤성에 따라 서로 다른
+마스킹 지수(\Cref{eq:avtm,eq:avnm})를 적용한다.
+
+시간 영역에서도 비대칭이 존재한다. 마스커가 사라진 뒤의 후행 마스킹은 수십에서
+수백 밀리초에 걸쳐 서서히 소멸하지만, 마스커 시작 이전의 선행 마스킹은 수 밀리초에
+불과하다. 이 시간적 마스킹은 변환 부호화기에서 \emph{사전 반향}(pre-echo) 문제와
+직결되며, 짧은 블록으로의 전환(block switching)을 통해 제어한다(\Cref{sec:algorithm}).
+
 \subsection{지각적 부호화에서의 역할}
 MPEG-1 Layer III(MP3), MPEG-2/4 AAC 등 지각적 오디오 부호화기는 심리음향 모델로부터
 각 주파수 대역(또는 서브밴드)의 \emph{마스킹 문턱값}을 얻는다. 그런 다음 그 문턱값
@@ -295,6 +322,57 @@ ratio)는
 이다. $\MNR(n) \ge 0$이면 서브밴드 $n$의 양자화 잡음이 마스킹 문턱값 아래에 있어
 지각되지 않는다. 비트 할당의 목표는 주어진 비트 예산 안에서 모든 서브밴드의
 최소 $\MNR$을 최대화(또는 모든 대역에서 $\MNR \ge 0$을 확보)하는 것이다.
+
+\subsection{스펙트럼 전력의 음압 레벨 정규화}
+심리음향 모델의 모든 문턱값 계산은 \emph{절대} 음압 레벨(\dBSPL)을 기준으로 하므로,
+FFT로 얻은 스펙트럼 전력을 재생 시스템이 낼 수 있는 최대 음압에 맞추어 정규화해야
+한다. 길이 $N$의 창 $w[n]$을 적용한 프레임의 스펙트럼을 $X(k)$라 하면 전력 밀도
+스펙트럼은
+\begin{equation}\label{eq:psd}
+  P(k) = \mathrm{PN} + 10\log_{10}\!\left(\frac{2\,|X(k)|^{2}}
+         {N \sum_{n=0}^{N-1} w^{2}[n]}\right) \quad [\si{\decibel}],
+\end{equation}
+로 주어진다. 여기서 $P(k)$는 이산 주파수 인덱스 $k$에서의 음압 레벨(\dBSPL),
+$X(k)$는 창을 적용한 신호의 이산 푸리에 변환, $N$은 변환 길이, $w[n]$은 분석
+창(예: Hann 창), $\mathrm{PN}$은 최대 음압을 규정하는 \emph{전력 정규화
+항}(power normalization term)이다. MPEG-1 심리음향 모델은 관례적으로
+$\mathrm{PN}=\SI{90.302}{\decibel}$로 두어, 진폭이 만관(full-scale)인 순음이 약
+\SI{96}{\dBSPL}에 대응하도록 한다. \Cref{eq:psd}에서 $2/(N\sum w^{2}[n])$ 항은 창에
+의한 이득과 단측 스펙트럼(one-sided spectrum) 환산을 보정한다.
+
+\subsection{톤-잡음 비대칭의 정량화}
+\Cref{eq:avtm,eq:avnm}의 마스킹 지수는 \Cref{sec:background}에서 설명한 톤-잡음
+비대칭을 직접 수치화한 것이다. Bark 위치 $z$에서 두 지수의 차이는
+\begin{equation}\label{eq:tmnnmt}
+  \Delta_{\mathrm{av}}(z) = \mathrm{av}_{\mathrm{NM}}(z) - \mathrm{av}_{\mathrm{TM}}(z)
+     = 4 + 0.1\,z \quad [\si{\decibel}],
+\end{equation}
+로, 같은 음압을 갖는 비톤성 마스커가 톤성 마스커보다 약 \SIrange{4}{6.4}{\decibel}
+더 강하게 마스킹함을 나타낸다($z=0$에서 \SI{4}{\decibel}, $z=24$에서 약
+\SI{6.4}{\decibel}). 이는 \emph{순음이 잡음을 가리는}(TMN) 경우 요구되는
+신호 대 마스크 비가 \emph{잡음이 순음을 가리는}(NMT) 경우보다 크다는 실험적
+사실과 일치한다. 따라서 동일 에너지라도 톤성 성분 주변에서는 양자화 잡음을 더
+낮게 눌러야 하며, 부호화기는 톤성 판별(\Cref{eq:tonal})의 정확도에 민감하다.
+
+\subsection{지각 엔트로피(Perceptual Entropy)}
+전역 마스킹 문턱값(\Cref{eq:global})이 주어지면, 프레임을 지각적으로 무손실하게
+부호화하는 데 필요한 최소 비트 수의 하한을 추정할 수 있다. Johnston이 제안한
+\emph{지각 엔트로피}(perceptual entropy, PE)는 각 임계대역 분할 $b$의 신호
+에너지 $e(b)$를 그 대역의 마스킹 문턱값 에너지 $\mathit{thr}(b)$로 정규화하여
+합산한다.
+\begin{equation}\label{eq:pe}
+  \mathrm{PE} = \sum_{b} k_{b}\,
+     \log_{2}\!\left(1 + \frac{e(b)}{\mathit{thr}(b)}\right)
+     \quad [\si{\bit}],
+\end{equation}
+여기서 $e(b)$는 분할 $b$의 신호 에너지, $\mathit{thr}(b)$는 그 분할의 마스킹
+문턱값 에너지(\Cref{eq:global}의 $T_{g}$를 선형 전력으로 환산한 값), $k_{b}$는
+분할 $b$에 속한 스펙트럼 계수(주파수 라인)의 개수이다. 비 $e(b)/\mathit{thr}(b)$는
+문턱값 대비 신호의 초과분을 나타내므로, PE는 문턱값 위로 드러난 신호를 표현하는 데
+필요한 대략적인 비트 수요(bit demand)를 뜻한다. PE가 큰 프레임은 지각적으로 복잡
+(예: 어택 성분이 많은 과도 구간)하여 더 많은 비트를 요구하며, 이 값은 비트 저장소
+(bit reservoir) 관리와 장/단블록 전환 판정(\Cref{sec:algorithm})의 판단 근거로
+쓰인다.
 
 %==============================================================================
 \section{알고리즘 및 구현 기법}\label{sec:algorithm}
@@ -444,6 +522,122 @@ Layer I/II에, 계산량이 큰 모델 2는 주로 Layer III(MP3)에 권장되�
   \end{tabular}
 \end{table}
 
+\subsection{계산된 확산 함수}
+\Cref{fig:masking}의 마스킹 곡선은 형태만 보여주는 개념적 예시이므로, 여기서는
+\Cref{eq:spread}의 Schroeder 확산 함수 $\mathrm{SF}(\dz)$를 실제로 계산하여
+\Cref{fig:spread}에 제시한다. Bark 축 거리 $\dz>0$(고주파 방향)에서 완만히,
+$\dz<0$(저주파 방향)에서 가파르게 감소하는 비대칭이 그대로 드러난다. 이 곡선은
+개별 마스킹 문턱값(\Cref{eq:indiv})을 인접 대역으로 확산할 때 그대로 사용된다.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+        width=0.85\textwidth, height=6.5cm,
+        xlabel={Bark-axis distance $\dz$ (Bark)},
+        ylabel={Spreading function $\mathrm{SF}(\dz)$ (dB)},
+        xmin=-6, xmax=6, ymin=-40, ymax=5,
+        grid=both, legend pos=south west,
+        every axis plot/.append style={very thick},
+    ]
+      % Schroeder 2-slope spreading function, eq:spread
+      \addplot[blue, domain=-6:6, samples=200] {
+        15.81 + 7.5*(x + 0.474)
+        - 17.5*sqrt(1 + (x + 0.474)^2)
+      };
+      \addlegendentry{$\mathrm{SF}(\dz)$ (eq:spread)}
+      \draw[dashed, gray] (axis cs:0,-40) -- (axis cs:0,5);
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Computed Schroeder two-slope spreading function $\mathrm{SF}(\dz)$
+           from \Cref{eq:spread}. The masking spread is asymmetric: it decays
+           gently toward higher frequencies ($\dz>0$) and steeply toward lower
+           frequencies ($\dz<0$). The dashed line marks the masker position
+           ($\dz=0$).}
+  \label{fig:spread}
+\end{figure}
+
+\subsection{필터뱅크 상호작용과 문턱값 재사상}
+심리음향 분석은 통상 FFT 기반의 균등 주파수 격자에서 이루어지지만, 실제 부호화기의
+양자화는 필터뱅크 서브밴드 위에서 수행된다. 따라서 모델이 산출한 임계대역
+분할별 문턱값을 부호화기의 대역 구조로 \emph{재사상}(remapping)해야 한다. MPEG-1
+Layer I/II는 폴리페이즈(polyphase) 32-서브밴드 필터뱅크를 쓰므로 각 균등 폭
+서브밴드에 그 대역을 덮는 임계대역 문턱값의 최소값을 대응시킨다. 반면 Layer
+III(MP3)는 32-서브밴드 필터뱅크 뒤에 적응적 길이의 MDCT를 이어 붙인 \emph{혼성
+필터뱅크}(hybrid filterbank)를 사용하여 최대 576개의 주파수 라인을 얻고, 이들을
+\emph{스케일팩터 대역}(scalefactor band, SFB)으로 묶는다. 심리음향 문턱값은 임계
+대역 분할에서 SFB로 에너지 가중 평균 또는 최소값 규칙으로 변환된다. AAC는 MDCT만을
+사용하는 순수 변환 부호화기로, 문턱값은 직접 스케일팩터 대역 단위로 계산된다.
+
+\subsection{사전 반향과 블록 전환}
+MDCT처럼 긴 분석 블록(예: \num{1024}점)을 쓰면 주파수 분해능은 높지만 시간
+분해능이 낮다. 이때 블록 후반부에 갑작스러운 어택(attack)이 등장하면, 역변환 후
+양자화 잡음이 블록 전체로 퍼져 어택 \emph{이전}의 조용한 구간까지 잡음이 새어
+나오는 \emph{사전 반향}(pre-echo)이 발생한다. 시간적 마스킹의 선행 마스킹 구간이
+수 밀리초에 불과하므로(\Cref{sec:background}), 긴 블록의 사전 반향은 쉽게 가청된다.
+이를 막기 위해 부호화기는 과도(transient)를 검출하면 긴 블록을 여러 개의 짧은
+블록(예: \num{128}점 $\times$ 3)으로 전환하여 시간 분해능을 높인다. 전환 시에는
+필터뱅크의 완전 재구성 조건을 유지하기 위해 시작/종료(start/stop) 블록을 끼워
+넣는다. \Cref{alg:blockswitch}에 지각 엔트로피(\Cref{eq:pe})와 어택 검출에 기반한
+블록 전환 판정을 정리한다.
+
+\begin{algorithm}[htbp]
+  \caption{Perceptual-entropy / attack-driven block-switching decision}
+  \label{alg:blockswitch}
+  \begin{algorithmic}[1]
+    \State \textbf{Input:} current frame $x[n]$, previous block type, thresholds $\theta_{\mathrm{PE}}$, $\theta_{\mathrm{att}}$
+    \State \textbf{Output:} block type $\in \{\textsc{long}, \textsc{start}, \textsc{short}, \textsc{stop}\}$
+    \State Compute perceptual entropy $\mathrm{PE}$ of the frame \Comment{\Cref{eq:pe}}
+    \State Split frame into $M$ sub-windows; compute short-time energy $E_m$ for $m=1,\dots,M$
+    \State $\mathit{attack} \gets \textbf{false}$
+    \For{$m \gets 2$ to $M$}
+      \If{$E_m / \bar{E}_{<m} > \theta_{\mathrm{att}}$} \Comment{energy jump vs. running mean}
+        \State $\mathit{attack} \gets \textbf{true}$
+      \EndIf
+    \EndFor
+    \If{$\mathit{attack}$ \textbf{or} $\mathrm{PE} > \theta_{\mathrm{PE}}$}
+      \If{previous block was \textsc{long}}
+        \State \Return \textsc{start} \Comment{transition long$\to$short}
+      \Else
+        \State \Return \textsc{short}
+      \EndIf
+    \Else
+      \If{previous block was \textsc{short}}
+        \State \Return \textsc{stop} \Comment{transition short$\to$long}
+      \Else
+        \State \Return \textsc{long}
+      \EndIf
+    \EndIf
+  \end{algorithmic}
+\end{algorithm}
+
+\subsection{MPEG-1 계층별 파라미터 요약}
+\Cref{tab:layers}는 MPEG-1 Audio 세 계층의 대표적 파라미터를 정리한 것으로,
+필터뱅크 구조와 프레임 길이의 차이가 앞서 논의한 시간/주파수 분해능 절충과 어떻게
+연결되는지 보여준다.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Representative parameters of MPEG-1 Audio Layers I--III
+           (\SI{48}{\kilo\hertz} sampling)}
+  \label{tab:layers}
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Parameter & Layer I & Layer II & Layer III \\
+    \midrule
+    Filterbank        & 32-band PQMF & 32-band PQMF & 32-band PQMF + MDCT \\
+    Frequency lines   & 32           & 32           & up to 576 \\
+    Samples / frame   & 384          & 1152         & 1152 \\
+    Psychoacoustic model & Model 1   & Model 1      & Model 2 \\
+    Block switching   & no           & no           & yes (long/short) \\
+    Bit reservoir     & no           & no           & yes \\
+    Typical bitrate (stereo) & \SI{384}{\kilo\bit\per\second}
+                      & \SI{192}{\kilo\bit\per\second}
+                      & \SI{128}{\kilo\bit\per\second} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \subsection{비트 할당과의 결합}
 심리음향 모델이 산출한 서브밴드별 $\SMR(n)$은 양자화·비트 할당 단계로 전달된다.
 할당기는 각 서브밴드에 비트를 추가할 때 얻는 $\SNR(n)$을 이용하여
@@ -459,9 +653,14 @@ $\MNR(n)\ge 0$을 확보하여 양자화 잡음을 마스킹 문턱값 아래로
 심리음향 모델은 인간 청각의 마스킹 특성을 정량화하여, 지각적으로 무의미한 성분을
 식별하고 그 아래로 양자화 잡음을 숨김으로써 고효율 오디오 압축을 가능하게 한다.
 본 문서는 배경 이론에서 출발하여 표준 수식(\Cref{sec:math})과 MPEG-1 모델 1/2
-알고리즘(\Cref{sec:algorithm})까지를 정리하였다. 실제 구현 시에는 대상 부호화기
-(MP3, AAC 등)의 필터뱅크 구조와 프레임 길이에 맞추어 문턱값을 재사상하고, 사전
-반향 억제와 블록 전환(block switching) 등 시간적 처리를 함께 고려해야 한다.
+알고리즘(\Cref{sec:algorithm})까지를 정리하였다. 특히 마스킹의 확산·톤잡음
+비대칭(\Cref{eq:tmnnmt}), 스펙트럼 전력의 음압 레벨 정규화(\Cref{eq:psd}), 그리고
+지각 엔트로피(\Cref{eq:pe})를 통한 비트 수요 추정까지 다룸으로써, 심리음향
+분석이 부호화기의 비트 할당 및 시간 처리와 어떻게 맞물리는지를 구체화하였다.
+실제 구현 시에는 대상 부호화기(MP3, AAC 등)의 필터뱅크 구조와 프레임 길이에
+맞추어 문턱값을 재사상하고(\Cref{tab:layers}), 지각 엔트로피와 어택 검출에 기반한
+블록 전환(\Cref{alg:blockswitch})으로 사전 반향을 억제하는 등 시간적 처리를 함께
+고려해야 한다.
 
 %==============================================================================
 \begin{thebibliography}{9}
@@ -491,6 +690,12 @@ $\MNR(n)\ge 0$을 확보하여 양자화 잡음을 마스킹 문턱값 아래로
   M.~Bosi and R.~E.~Goldberg,
   \emph{Introduction to Digital Audio Coding and Standards},
   Kluwer Academic Publishers.
+
+\bibitem{johnston}
+  J.~D.~Johnston,
+  ``Transform coding of audio signals using perceptual noise criteria,''
+  \emph{IEEE Journal on Selected Areas in Communications},
+  vol.~6, no.~2, pp.~314--323, 1988.
 \end{thebibliography}
 
 \end{document}
