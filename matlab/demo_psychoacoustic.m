@@ -129,38 +129,84 @@ PN   = 90.302;               % MPEG-1 power-normalization term (dB)
 wsum = sum(w.^2);
 P    = PN + 10 * log10((2 * abs(Xh).^2) / (N * wsum) + eps);   % + eps: avoid log(0)
 
-% Absolute threshold of hearing on the same frequency grid (skip DC bin).
-Tq_bins = ath_terhardt(max(f_bin, 1));   % clamp DC to 1 Hz to keep it finite
+% Absolute threshold of hearing on the same frequency grid. The Terhardt ATH
+% (eq:ath) is only meaningful in the audible range: at ~1 Hz its low-frequency
+% term 3.64*(f/1000)^-0.8 explodes to ~900 dB, which would swamp the lowest
+% Bark band. Restrict evaluation to bins at or above f_min and mask the
+% sub-audible bins out of the threshold/SMR handling below.
+f_min   = 20;                            % lower edge of the audible range (Hz)
+audible = (f_bin >= f_min);              % logical mask over the FFT grid
+Tq_bins = ath_terhardt(max(f_bin, f_min));   % evaluate ATH within audible range
 
 % =============================================================================
 % 5. Tonal peak, global masking threshold sketch, per-band SMR
 % =============================================================================
-% Find the dominant spectral peak (ignore the DC bin).
-[peak_level, peak_idx] = max(P(2:end));
-peak_idx  = peak_idx + 1;                 % correct for the (2:end) offset
+% Find the dominant spectral peak within the audible range (ignore the DC bin
+% and any sub-audible bins).
+search_mask          = audible;
+search_mask(1)       = false;             % never pick the DC bin
+P_search             = P;
+P_search(~search_mask) = -Inf;            % exclude out-of-range bins from the max
+[peak_level, peak_idx] = max(P_search);
 peak_freq = f_bin(peak_idx);
 peak_bark = hz2bark(peak_freq);
 
-fprintf('\n--- Detected tonal masker ---\n');
+% -------------------------------------------------------------------------
+% Tonality decision: is the dominant peak tonal (narrow, sinusoid-like) or
+% non-tonal (noise-like)? We use a simple, toolbox-free local-prominence
+% test: compare the peak level to the average level of its neighbouring bins
+% (excluding the peak itself). A tonal component stands well above its local
+% background; a noise-like component does not. The threshold below is a
+% pragmatic sketch value, not a standard-mandated criterion.
+nb          = 4;                          % half-width of the local neighbourhood (bins)
+lo          = max(peak_idx - nb, 2);
+hi          = min(peak_idx + nb, length(P));
+neigh_idx   = lo:hi;
+neigh_idx(neigh_idx == peak_idx) = [];    % drop the peak bin itself
+local_avg   = mean(P(neigh_idx));         % average neighbouring level (dB)
+prominence  = peak_level - local_avg;     % how far the peak stands out (dB)
+tonal_thresh = 7;                         % prominence threshold (dB) for tonality
+is_tonal    = prominence >= tonal_thresh;
+
+% Select the masking index according to the tonality decision:
+%   tonal masker      -> av_tm (eq:avtm): -1.525 - 0.275*z - 4.5
+%   non-tonal masker  -> av_nm (eq:avnm): -1.525 - 0.175*z - 0.5
+if is_tonal
+    av      = -1.525 - 0.275 * peak_bark - 4.5;   % tonal masking index (eq:avtm)
+    av_kind = 'tonal (eq:avtm)';
+else
+    av      = -1.525 - 0.175 * peak_bark - 0.5;   % non-tonal masking index (eq:avnm)
+    av_kind = 'non-tonal (eq:avnm)';
+end
+
+fprintf('\n--- Detected masker ---\n');
 fprintf('  peak frequency : %8.1f Hz\n', peak_freq);
 fprintf('  peak level     : %8.2f dB SPL\n', peak_level);
 fprintf('  peak position  : %8.2f Bark\n', peak_bark);
+fprintf('  local promin.  : %8.2f dB (>= %.1f => tonal)\n', prominence, tonal_thresh);
+fprintf('  masker type    : %s\n', av_kind);
 
 % Global masking threshold sketch: combine the ATH with the masker spread via
-% the spreading function, in the power (energy) domain (cf. eq:global).
+% the spreading function, in the power (energy) domain (cf. eq:global). The
+% masking index "av" was chosen above by the tonality test (eq:avtm/eq:avnm).
 %   individual threshold(i) = peak_level + av + SF(z_i - z_masker)
-z_bins = hz2bark(max(f_bin, 1));
-av_tm  = -1.525 - 0.275 * peak_bark - 4.5;         % tonal masking index (eq:avtm)
-T_ind  = peak_level + av_tm + spreading_function(z_bins - peak_bark);
+z_bins = hz2bark(max(f_bin, f_min));
+T_ind  = peak_level + av + spreading_function(z_bins - peak_bark);
 
 % Power-domain sum of ATH and the individual masking contribution.
 T_glob = 10 * log10(10.^(Tq_bins / 10) + 10.^(T_ind / 10) + eps);
+% Keep the sub-audible bins out of the printed/plotted threshold so they are
+% not governed by the out-of-range ATH value near DC.
+T_glob(~audible) = NaN;
 
 if can_plot
     hf = figure('Visible', 'off');
-    semilogx(f_bin(2:end), P(2:end), 'Color', [0.6 0.6 0.6]); hold on;
-    semilogx(f_bin(2:end), Tq_bins(2:end), 'g', 'LineWidth', 1.2);
-    semilogx(f_bin(2:end), T_glob(2:end), 'r', 'LineWidth', 1.5);
+    % Plot only the audible range so the near-DC ATH value does not distort
+    % the vertical scale.
+    fa = f_bin(audible);
+    semilogx(fa, P(audible), 'Color', [0.6 0.6 0.6]); hold on;
+    semilogx(fa, Tq_bins(audible), 'g', 'LineWidth', 1.2);
+    semilogx(fa, T_glob(audible), 'r', 'LineWidth', 1.5);
     grid on;
     xlabel('Frequency (Hz, log axis)');
     ylabel('Level (dB SPL)');
@@ -181,7 +227,9 @@ band_edges_bark = 0:2:24;                 % coarse 2-Bark bands for the sketch
 for b = 1:(length(band_edges_bark) - 1)
     zlo = band_edges_bark(b);
     zhi = band_edges_bark(b + 1);
-    in_band = (z_bins >= zlo) & (z_bins < zhi);
+    % Restrict each band to audible bins so the lowest band's numbers are not
+    % dominated by the out-of-range ATH near DC.
+    in_band = (z_bins >= zlo) & (z_bins < zhi) & audible;
     if any(in_band)
         Ls_band  = max(P(in_band));           % band signal level (max component)
         Tmin_band = min(T_glob(in_band));      % minimum masking threshold (eq:minmask)

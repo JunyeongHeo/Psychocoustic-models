@@ -747,10 +747,13 @@ end
 \subsection{구동 스크립트}
 \Cref{lst:demo}의 구동 스크립트는 위 함수들을 결합한다. \SI{1}{\kilo\hertz} 순음과
 잡음의 합성 신호에 Hann 창을 곱하여 FFT를 취하고, \Cref{eq:psd}의 전력 정규화
-($\mathrm{PN}=\SI{90.302}{\decibel}$)로 \dBSPL 스펙트럼을 얻는다. 이어 지배적 톤성
-정점을 찾아 확산 함수와 톤성 마스킹 지수(\Cref{eq:avtm})로 개별 문턱값을 만들고,
-절대 청취 문턱값과 전력 영역에서 합산하여 전역 마스킹 문턱값(\Cref{eq:global})을
-스케치한 뒤, 대역별 \SMR(\Cref{eq:smr})을 출력한다. Hann 창은 툴박스 없이
+($\mathrm{PN}=\SI{90.302}{\decibel}$)로 \dBSPL 스펙트럼을 얻는다. 이어 가청 대역
+($\ge\SI{20}{\hertz}$)에서 지배적 정점을 찾은 뒤, 국소 돌출도(주변 빈 평균 대비 정점
+레벨) 기준의 간단한 톤성 판정으로 톤성 마스킹 지수(\Cref{eq:avtm})와 비톤성 마스킹
+지수(\Cref{eq:avnm}) 중 하나를 선택하여 개별 문턱값을 만들고, 절대 청취 문턱값과
+전력 영역에서 합산하여 전역 마스킹 문턱값(\Cref{eq:global})을 스케치한 뒤, 대역별
+\SMR(\Cref{eq:smr})을 출력한다. 절대 청취 문턱값(\Cref{eq:ath})은 직류 부근에서
+발산하므로 가청 대역으로 제한하여 최저 대역의 수치가 왜곡되지 않게 한다. Hann 창은 툴박스 없이
 $w[n]=0.5-0.5\cos\bigl(2\pi n/(N-1)\bigr)$로 직접 만든다. 그림 생성은 헤드리스
 환경에서도 안전하도록 보이지 않는 도형으로 만들어 PNG로 저장하며, 그래픽 백엔드가
 없으면 수치 결과만 출력하고 계속 진행한다. 지면 관계상 아래에는 신호 합성부터 대역별
@@ -768,20 +771,36 @@ half = (N/2) + 1; Xh = X(1:half);
 f_bin = (0:half-1)' * fs / N;
 PN = 90.302; wsum = sum(w.^2);               % power normalization (eq:psd)
 P  = PN + 10*log10((2*abs(Xh).^2)/(N*wsum) + eps);
-Tq_bins = ath_terhardt(max(f_bin, 1));       % ATH on the FFT grid (eq:ath)
+% Restrict the ATH to the audible range: near DC the Terhardt term blows up.
+f_min = 20; audible = (f_bin >= f_min);
+Tq_bins = ath_terhardt(max(f_bin, f_min));   % ATH on the FFT grid (eq:ath)
 
-% --- Dominant tonal peak and global masking threshold sketch (eq:global) ---
-[peak_level, peak_idx] = max(P(2:end)); peak_idx = peak_idx + 1;
+% --- Dominant peak within the audible range ---
+P_search = P; P_search(~audible | ((1:numel(P))'==1)) = -Inf;
+[peak_level, peak_idx] = max(P_search);
 peak_freq = f_bin(peak_idx); peak_bark = hz2bark(peak_freq);
-z_bins = hz2bark(max(f_bin, 1));
-av_tm  = -1.525 - 0.275*peak_bark - 4.5;     % tonal masking index (eq:avtm)
-T_ind  = peak_level + av_tm + spreading_function(z_bins - peak_bark);
+
+% --- Tonality test: local prominence over neighbouring bins ---
+lo = max(peak_idx-4,2); hi = min(peak_idx+4,numel(P));
+neigh = lo:hi; neigh(neigh==peak_idx) = [];
+is_tonal = (peak_level - mean(P(neigh))) >= 7;   % prominence >= 7 dB => tonal
+if is_tonal
+    av = -1.525 - 0.275*peak_bark - 4.5;     % tonal masking index (eq:avtm)
+else
+    av = -1.525 - 0.175*peak_bark - 0.5;     % non-tonal masking index (eq:avnm)
+end
+
+% --- Global masking threshold sketch (eq:global) ---
+z_bins = hz2bark(max(f_bin, f_min));
+T_ind  = peak_level + av + spreading_function(z_bins - peak_bark);
 T_glob = 10*log10(10.^(Tq_bins/10) + 10.^(T_ind/10) + eps);
+T_glob(~audible) = NaN;                      % drop sub-audible bins
 
 % --- Per-band SMR sketch (eq:smr) ---
 band_edges_bark = 0:2:24;
 for b = 1:(length(band_edges_bark)-1)
-    in_band = (z_bins >= band_edges_bark(b)) & (z_bins < band_edges_bark(b+1));
+    in_band = (z_bins >= band_edges_bark(b)) & ...
+              (z_bins < band_edges_bark(b+1)) & audible;
     if any(in_band)
         Ls_band   = max(P(in_band));         % band signal level
         Tmin_band = min(T_glob(in_band));    % min masking threshold (eq:minmask)
