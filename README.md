@@ -88,7 +88,12 @@ latexmk -xelatex main.tex
    톤성/비톤성 마스커 판별, 개별·전역 마스킹 문턱값, SMR/MNR/SNR 관계
 3. **알고리즘 및 구현 기법** — MPEG-1 심리음향 모델 1·2 의사코드, 비트 할당과의 결합,
    TikZ/pgfplots 그림, booktabs 표
-4. **MATLAB 예제 코드** — 핵심 수식(ATH, Bark 변환, 확산 함수)의 MATLAB 구현을
+4. **심리음향 손실 함수 구성 전략** — pam-nac의 SMR/NMR 손실을 근거로 한 손실 수준
+   조건화, PAM-2를 학습 손실로 활용하는 절차와 PyTorch 참조 구현
+5. **CNN 인코더 조건화 (Conditioning a CNN encoder)** — 손실 수준을 넘어 CNN 기반
+   인코더의 입력(채널 결합)·특징(FiLM)·병목/비트 할당에 SMR/NMR/마스킹 문턱값을
+   조건화하는 전략과 장단점, 구체적 권장 구성, TikZ 개요도, PyTorch 참조 코드
+6. **MATLAB 예제 코드** — 핵심 수식(ATH, Bark 변환, 확산 함수)의 MATLAB 구현을
    `listings` 패키지로 조판하고, 실행 가능한 스크립트를 `matlab/` 디렉터리로 제공
 
 ## MATLAB / GNU Octave 예제 코드
@@ -159,6 +164,7 @@ TensorFlow 원본 `smr_loss`·`nmr_max_mean_loss`를 관용적인 **PyTorch**로
 | 파일 | 내용 | 대응 수식 |
 | --- | --- | --- |
 | [`python/torch_pam2_loss.py`](python/torch_pam2_loss.py) | PyTorch SMR 우선순위 가중 MSE 손실 + NMR 상한 최소화 손실 (미분 가능 STFT 경로 + detach된 PAM-2 문턱값) | eq:smrloss, eq:nmrloss |
+| [`python/torch_encoder_conditioning.py`](python/torch_encoder_conditioning.py) | CNN 인코더에 심리음향 정보를 조건화하는 참조 블록: FiLM 특징별 변조 + 마스킹 문턱값 채널 결합 (`torch`/`torch.nn`만 사용) | eq:film |
 
 **미분 가능/불가능 경계**: PAM-2 전역 마스킹 문턱값의 계산(마스커·톤성 선정,
 불예측성, 확산, ATH 하한, 사전 반향)은 **미분 불가능**하며 `matlab/pam2_threshold.m`
@@ -166,23 +172,33 @@ TensorFlow 원본 `smr_loss`·`nmr_max_mean_loss`를 관용적인 **PyTorch**로
 결과인 프레임별 문턱값 `gms`(dB)는 손실 함수 안에서 `.detach()`로 상수 처리되며,
 STFT 로그-PSD 위에서 계산되는 손실은 복호 신호에 대해 **미분 가능**합니다.
 
+또한 손실 수준 조건화를 넘어 **CNN 인코더 자체**에 심리음향 정보를 조건화하는 참조
+블록을 함께 제공합니다. `python/torch_encoder_conditioning.py`는 (a) 조건화 벡터에서
+채널별 `gamma`/`beta`를 예측해 특징 맵을 변조하는 **FiLM** 층과 (b) 프레임별 마스킹
+문턱값 곡선을 재표본화·브로드캐스트하여 1차원 CNN 입력에 결합하는 **채널 결합** 블록을
+구현합니다. 문서의 조건화 절(아래 문서 구성 참고)에 대응합니다.
+
 ### 실행 방법 (Python)
 
 ```sh
 python3 python/torch_pam2_loss.py
+python3 python/torch_encoder_conditioning.py
 ```
 
-`if __name__ == "__main__"` 스모크 테스트가 무작위 텐서로 두 손실을 호출하여 스칼라
-손실 값을 출력하고, 값이 유한하며 음이 아님을 확인합니다. 실행에는 **PyTorch**가
-필요합니다(`pip install torch`).
+각 파일의 `if __name__ == "__main__"` 스모크 테스트가 무작위 텐서로 함수/블록을
+호출하여 출력을 확인합니다(`torch_pam2_loss.py`는 두 손실 값이 유한·음이 아님을,
+`torch_encoder_conditioning.py`는 FiLM·채널 결합 출력의 형상과 유한성을 검증).
+실행에는 **PyTorch**가 필요합니다(`pip install torch`).
 
 ### 이 샌드박스에 대한 주의사항 (MATLAB/Octave 및 PyTorch)
 
 이 문서를 작성한 샌드박스에는 **MATLAB/Octave가 설치되어 있지 않으며, PyTorch도
 설치되어 있지 않고 네트워크가 차단(INTEGRATIONS_ONLY)되어 설치도 불가능**합니다.
-따라서 `matlab/*.m` 스크립트와 `python/torch_pam2_loss.py`의 `__main__` 스모크
-테스트는 **샌드박스 안에서 실행되지 않았습니다**. 다만 Python 파일은 `torch`를
-import하지 않는 정적 검사인 `python3 -m py_compile python/torch_pam2_loss.py`로
+따라서 `matlab/*.m` 스크립트와 `python/torch_pam2_loss.py`·
+`python/torch_encoder_conditioning.py`의 `__main__` 스모크 테스트는 **샌드박스
+안에서 실행되지 않았습니다**(`python3 -c "import torch"`가 `ModuleNotFoundError`).
+다만 두 Python 파일 모두 `torch`를 import하지 않는 정적 검사인
+`python3 -m py_compile python/torch_pam2_loss.py python/torch_encoder_conditioning.py`로
 문법 유효성을 확인했습니다. 실제 실행은 위 준비(Octave / PyTorch)를 갖춘 **외부
 환경**에서 수행하십시오.
 
